@@ -1,0 +1,6 @@
+{
+  "name": "Tra Cứu Vận Đơn Hàng Loạt",
+  "description": "Công cụ kiểm tra trạng thái hàng loạt cho 5.000+ mã vận đơn mỗi ngày qua GHN, SPX, J&T Express, Viettel Post, Ninja Van; tích hợp đồng bộ trực tiếp API kho YunWMS (VN02 Hồ Chí Minh, VN01 Hải Ngoại), tự động phát hiện trạng thái Đã scan, Chưa scan, Đơn hủy, Đang giao và xuất báo cáo Excel.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
