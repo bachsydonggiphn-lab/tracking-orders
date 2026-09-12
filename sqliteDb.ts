@@ -131,6 +131,7 @@ export async function getAllSqliteOrders(): Promise<OrderItem[]> {
       warehouseName: r.warehouse_name ? String(r.warehouse_name) : undefined,
       source: r.source ? String(r.source) : undefined,
     },
+    isChecking: false,
     timeline: [] // Lazy-loaded on demand when user clicks to inspect order details
   }));
 }

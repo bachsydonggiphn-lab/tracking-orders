@@ -38,6 +38,7 @@ export default function App() {
   const [showJNT10Modal, setShowJNT10Modal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [trackingMetrics, setTrackingMetrics] = useState<TrackingProgressMetrics | null>(null);
+  const [activeScanScope, setActiveScanScope] = useState<'all' | '3days' | '7days' | '14days' | 'unscanned'>('all');
   const [jtPhoneSuffix, setJtPhoneSuffix] = useState<string>('8836');
   const [isLoadingFromDb, setIsLoadingFromDb] = useState(false);
 
