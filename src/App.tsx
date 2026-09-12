@@ -38,8 +38,8 @@ export default function App() {
   const [showJNT10Modal, setShowJNT10Modal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [trackingMetrics, setTrackingMetrics] = useState<TrackingProgressMetrics | null>(null);
-  const [activeScanScope, setActiveScanScope] = useState<'all' | '3days' | '7days' | '14days' | 'unscanned'>('all');
   const [jtPhoneSuffix, setJtPhoneSuffix] = useState<string>('8836');
+  const [isLoadingFromDb, setIsLoadingFromDb] = useState(false);
 
   // Auto Sync & Real-time Scan State
   const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState<boolean>(() => {
@@ -524,17 +524,20 @@ export default function App() {
   };
 
   const handleReloadFromDatabase = async () => {
+    setIsLoadingFromDb(true);
     try {
       const persisted = await loadPersistedOrders();
       if (persisted.length > 0) {
         ordersRef.current = persisted;
         setOrders(persisted);
-        showToast(`🟢 Đã đồng bộ lại ${persisted.length.toLocaleString()} đơn mới nhất từ SQLite!`);
+        showToast(`🟢 Đã đồng bộ thành công ${persisted.length.toLocaleString()} đơn từ Cloud SQL!`);
       } else {
         showToast('Chưa có dữ liệu trong Database.');
       }
     } catch (err: any) {
       showToast('Lỗi khi tải từ Database: ' + err.message);
+    } finally {
+      setIsLoadingFromDb(false);
     }
   };
 
@@ -546,6 +549,10 @@ export default function App() {
   // Async load full orders dataset from Server SQLite Database on initial mount (F5)
   useEffect(() => {
     let isMounted = true;
+    if (orders.length === 0) {
+      setIsLoadingFromDb(true);
+    }
+
     loadPersistedOrders().then(persisted => {
       if (isMounted && persisted.length > 0) {
         setOrders(prev => {
@@ -563,9 +570,12 @@ export default function App() {
           o => o.statusCategory === 'not_scanned' || o.rawStatusText === 'Chưa kiểm tra' || o.rawStatusText === 'Chờ kiểm tra Live API'
         ).length;
 
-        showToast(`🟢 Đã nạp ${persisted.length.toLocaleString()} đơn từ Database SQL (${scannedCount.toLocaleString()} đã scan, ${unscannedCount.toLocaleString()} chờ cập nhật).`);
+        showToast(`🟢 Đã nạp ${persisted.length.toLocaleString()} đơn từ Cloud SQL (${scannedCount.toLocaleString()} đã scan, ${unscannedCount.toLocaleString()} chờ cập nhật).`);
       }
-    }).catch(() => {});
+    }).catch(() => {})
+      .finally(() => {
+        if (isMounted) setIsLoadingFromDb(false);
+      });
 
     return () => {
       isMounted = false;
@@ -878,6 +888,21 @@ export default function App() {
       {/* Main Content Area */}
       <main className="flex-1 w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         
+        {/* Cloud SQL Loading Indicator */}
+        {isLoadingFromDb && (
+          <div className="flex items-center justify-between p-3.5 bg-indigo-50 border border-indigo-200 rounded-xl text-indigo-900 shadow-xs animate-pulse">
+            <div className="flex items-center space-x-3">
+              <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+              <span className="text-xs sm:text-sm font-bold">
+                Đang truy xuất dữ liệu tức thì từ Cloud SQL (Turso)...
+              </span>
+            </div>
+            <span className="text-xs font-mono font-semibold text-indigo-600">
+              {orders.length > 0 ? `${orders.length.toLocaleString()} đơn` : 'Đang kết nối...'}
+            </span>
+          </div>
+        )}
+
         {/* Step 1: Input / Import Area */}
         <ImportArea
           onImport={handleImport}

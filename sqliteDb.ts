@@ -99,19 +99,63 @@ async function tryAutoMigrateFromJson(db: Client) {
 export async function getAllSqliteOrders(): Promise<OrderItem[]> {
   await initSqliteDb();
   const db = getSqliteDb();
-  const res = await db.execute("SELECT payload_json FROM orders ORDER BY rowid ASC");
-  const results: OrderItem[] = [];
-  for (const row of res.rows) {
-    try {
-      const json = (row.payload_json ?? (row as any)[0]) as string;
-      if (json) {
-        results.push(JSON.parse(json));
-      }
-    } catch {
-      // skip individual corrupted row
+  // SQL thuần truy vấn trực tiếp các cột cần thiết (Loại bỏ payload_json khổng lồ để đạt tốc độ tức thì)
+  const res = await db.execute(`
+    SELECT 
+      id, tracking_code, order_no, carrier, carrier_channel, 
+      status_category, raw_status_text, status_detail, 
+      scanned_at, updated_at, order_created_at, 
+      customer_name, customer_phone, warehouse_id, warehouse_name, 
+      source 
+    FROM orders 
+    ORDER BY rowid ASC
+  `);
+
+  return res.rows.map(r => ({
+    id: String(r.id || ''),
+    trackingCode: String(r.tracking_code || ''),
+    carrier: (r.carrier || 'unknown') as any,
+    carrierChannel: r.carrier_channel ? String(r.carrier_channel) : undefined,
+    statusCategory: (r.status_category || 'not_scanned') as any,
+    rawStatusText: r.raw_status_text ? String(r.raw_status_text) : 'Chưa kiểm tra',
+    statusDetail: r.status_detail ? String(r.status_detail) : undefined,
+    scannedAt: r.scanned_at ? String(r.scanned_at) : undefined,
+    updatedAt: r.updated_at ? String(r.updated_at) : undefined,
+    directUrl: undefined,
+    extraInfo: {
+      orderNo: r.order_no ? String(r.order_no) : undefined,
+      orderCreatedAt: r.order_created_at ? String(r.order_created_at) : undefined,
+      customerName: r.customer_name ? String(r.customer_name) : undefined,
+      customerPhone: r.customer_phone ? String(r.customer_phone) : undefined,
+      warehouseId: r.warehouse_id ? String(r.warehouse_id) : undefined,
+      warehouseName: r.warehouse_name ? String(r.warehouse_name) : undefined,
+      source: r.source ? String(r.source) : undefined,
+    },
+    timeline: [] // Lazy-loaded on demand when user clicks to inspect order details
+  }));
+}
+
+/**
+ * Lazy load detailed timeline events for a single tracking code
+ */
+export async function getOrderTimeline(trackingCode: string): Promise<any[] | null> {
+  await initSqliteDb();
+  const db = getSqliteDb();
+  const cleanCode = (trackingCode || '').trim().toUpperCase();
+  const res = await db.execute({
+    sql: "SELECT payload_json FROM orders WHERE UPPER(tracking_code) = ? LIMIT 1",
+    args: [cleanCode]
+  });
+
+  if (res.rows.length === 0) return null;
+  try {
+    const json = (res.rows[0].payload_json ?? (res.rows[0] as any)[0]) as string;
+    if (json) {
+      const parsed = JSON.parse(json);
+      return parsed.timeline || [];
     }
-  }
-  return results;
+  } catch {}
+  return [];
 }
 
 export async function getSqliteStats() {

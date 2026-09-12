@@ -43,6 +43,34 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
   const [phoneSuffix, setPhoneSuffix] = useState<string>(() => {
     return order?.extraInfo?.customerPhone?.replace(/\D/g, '').slice(-4) || defaultJtSuffix || '8836';
   });
+  const [timeline, setTimeline] = useState<any[]>(() => order?.timeline || []);
+  const [isLoadingTimeline, setIsLoadingTimeline] = useState(false);
+
+  React.useEffect(() => {
+    if (!order) return;
+    if (order.timeline && order.timeline.length > 0) {
+      setTimeline(order.timeline);
+      return;
+    }
+
+    let isMounted = true;
+    setIsLoadingTimeline(true);
+    fetch(`/api/orders/${encodeURIComponent(order.trackingCode)}/timeline`)
+      .then(res => res.json())
+      .then(data => {
+        if (isMounted && data.success && Array.isArray(data.timeline)) {
+          setTimeline(data.timeline);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (isMounted) setIsLoadingTimeline(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [order?.trackingCode]);
 
   if (!order) return null;
 
@@ -353,9 +381,14 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
               Lịch sử hành trình bưu kiện
             </h4>
 
-            {order.timeline && order.timeline.length > 0 ? (
+            {isLoadingTimeline ? (
+              <div className="flex flex-col items-center justify-center py-6 text-xs text-indigo-600 bg-indigo-50/50 rounded-lg border border-dashed border-indigo-200">
+                <RefreshCw className="w-4 h-4 animate-spin mb-1.5" />
+                <span>Đang tải lộ trình chi tiết từ SQL...</span>
+              </div>
+            ) : timeline && timeline.length > 0 ? (
               <div className="relative pl-6 space-y-4 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
-                {order.timeline.map((event, i) => (
+                {timeline.map((event, i) => (
                   <div key={i} className="relative group">
                     {/* Timeline Node */}
                     <div className={`absolute -left-6 top-1 w-4 h-4 rounded-full border-2 bg-white flex items-center justify-center ${

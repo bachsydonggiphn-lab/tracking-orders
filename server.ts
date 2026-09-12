@@ -5,8 +5,9 @@ import express from "express";
 import path from "path";
 import crypto from "crypto";
 import fs from "fs";
+import zlib from "zlib";
 import { createServer as createViteServer } from "vite";
-import { getAllSqliteOrders, upsertSqliteOrders, clearSqliteOrders, getSqliteStats, getSqliteDb, initSqliteDb } from "./sqliteDb";
+import { getAllSqliteOrders, getOrderTimeline, upsertSqliteOrders, clearSqliteOrders, getSqliteStats, getSqliteDb, initSqliteDb } from "./sqliteDb";
 import { matchesTrackingPrefixFilter } from "./src/services/carrierDetector";
 
 interface GHNTrackingLog {
@@ -1871,18 +1872,30 @@ async function startServer() {
   // Initialize SQLite database
   await initSqliteDb();
 
-  // Get orders from SQLite (Instant query, zero file read bottleneck)
+  // Get orders from SQLite (Instant query, zero file read bottleneck, GZIP compressed)
   const handleGetOrders = async (req: express.Request, res: express.Response) => {
     try {
       const orders = await getAllSqliteOrders();
       const stats = await getSqliteStats();
-      return res.json({
+      const payloadString = JSON.stringify({
         success: true,
         orders,
         count: orders.length,
         stats,
         lastSaved: new Date().toISOString()
       });
+
+      const acceptEncoding = (req.headers["accept-encoding"] || "") as string;
+      if (acceptEncoding.includes("gzip")) {
+        const compressed = zlib.gzipSync(payloadString);
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.setHeader("Content-Encoding", "gzip");
+        res.setHeader("Vary", "Accept-Encoding");
+        return res.send(compressed);
+      }
+
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      return res.send(payloadString);
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err.message });
     }
@@ -1890,6 +1903,24 @@ async function startServer() {
 
   app.get("/api/orders", handleGetOrders);
   app.get("/api/orders/state", handleGetOrders);
+
+  // Lazy-load timeline for single tracking code
+  app.get("/api/orders/:code/timeline", async (req: express.Request, res: express.Response) => {
+    try {
+      const code = req.params.code;
+      if (!code) {
+        return res.status(400).json({ success: false, error: "Missing tracking code" });
+      }
+      const timeline = await getOrderTimeline(code);
+      return res.json({
+        success: true,
+        trackingCode: code,
+        timeline: timeline || []
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
 
   // Fast stats endpoint
   app.get("/api/orders/stats", async (req, res) => {
