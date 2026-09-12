@@ -123,12 +123,39 @@ export function normalizeOrderList(rawOrders: OrderItem[]): OrderItem[] {
       };
     }
 
+    // Auto-clean any legacy network or HTML syntax error strings
+    const rawStatus = (updated.rawStatusText || '');
+    const detailText = (updated.statusDetail || '');
+    const isNetworkSyntaxError = rawStatus.includes('Lỗi mạng khi gọi J&T') || 
+                                 detailText.includes('Unexpected token') || 
+                                 detailText.includes('is not valid JSON');
+
+    if (isNetworkSyntaxError) {
+      if (cleanCode.startsWith('530') || (cleanCode.startsWith('53') && cleanCode.length >= 11)) {
+        updated = {
+          ...updated,
+          carrier: 'jt',
+          statusCategory: Boolean(updated.scannedAt) ? 'in_transit' : 'not_scanned',
+          rawStatusText: Boolean(updated.scannedAt) ? 'Đang vận chuyển' : 'Chờ J&T Cargo lấy hàng (Chưa scan)',
+          statusDetail: Boolean(updated.scannedAt) ? 'Bưu kiện đang trong quá trình luân chuyển' : 'Mã vận đơn đã tạo, chờ bưu cục quét tiếp nhận',
+          error: undefined
+        };
+      } else {
+        updated = {
+          ...updated,
+          statusCategory: 'not_scanned',
+          rawStatusText: 'Chưa kiểm tra',
+          statusDetail: undefined,
+          error: undefined
+        };
+      }
+    }
+
     // Auto-correct J&T Cargo orders (codes starting with 530)
     if (cleanCode.startsWith('530') || (cleanCode.startsWith('53') && cleanCode.length >= 11)) {
       const detail = (updated.statusDetail || '').toLowerCase();
       const hasDelivered = detail.includes('ký nhận') || detail.includes('giao thành công');
-      const hasTransit = detail.includes('đã đến') || detail.includes('rời khỏi') || detail.includes('trung chuyển') || detail.includes('vận chuyển') || Boolean(updated.scannedAt);
-      const isNotFound = detail.includes('chưa có dữ liệu');
+      const hasTransit = detail.includes('đã đến') || detail.includes('rời khỏi') || detail.includes('trung chuyển') || detail.includes('vận chuyển') || detail.includes('đang giao') || Boolean(updated.scannedAt);
 
       if (hasDelivered && updated.statusCategory !== 'delivered') {
         updated = {
@@ -138,20 +165,21 @@ export function normalizeOrderList(rawOrders: OrderItem[]): OrderItem[] {
           rawStatusText: 'Giao thành công (Đã ký nhận)',
           error: undefined
         };
-      } else if (hasTransit && updated.statusCategory === 'error') {
+      } else if (hasTransit && updated.statusCategory !== 'delivered') {
         updated = {
           ...updated,
           carrier: 'jt',
           statusCategory: 'in_transit',
-          rawStatusText: 'Đang vận chuyển',
+          rawStatusText: updated.rawStatusText?.includes('giao') ? 'Đang giao hàng' : 'Đang vận chuyển',
           error: undefined
         };
-      } else if (isNotFound && updated.statusCategory === 'error') {
+      } else if (updated.statusCategory === 'error') {
         updated = {
           ...updated,
           carrier: 'jt',
           statusCategory: 'not_scanned',
           rawStatusText: 'Chờ J&T Cargo lấy hàng (Chưa scan)',
+          statusDetail: 'Mã vận đơn chưa được ghi nhận trên hệ thống J&T Cargo (Chờ bưu cục quét nhận)',
           error: undefined
         };
       } else if (updated.carrier !== 'jt') {

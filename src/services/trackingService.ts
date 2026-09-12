@@ -384,6 +384,62 @@ function getTimestamp(hoursAgo: number = 0, minutesAgo: number = 0): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())} ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
+async function safeFetchApi(url: string, body: any, timeoutMs: number = 15000): Promise<{
+  ok: boolean;
+  success: boolean;
+  data?: any;
+  error?: string;
+}> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const res = await fetch(url, {
+      signal: controller.signal,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    clearTimeout(timeoutId);
+
+    const text = await res.text();
+    let json: any = null;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      return {
+        ok: false,
+        success: false,
+        error: 'Máy chủ phản hồi trang bảo trì hoặc đang bận'
+      };
+    }
+
+    if (res.ok && json && json.success) {
+      return { ok: true, success: true, data: json.data, error: undefined };
+    } else {
+      let errMsg = json?.error || (json?.message ? String(json.message) : undefined);
+      if (!errMsg || errMsg.includes('Unexpected token') || errMsg.includes('is not valid JSON') || errMsg.includes('<!DOCTYPE')) {
+        errMsg = 'Không tìm thấy dữ liệu vận đơn';
+      }
+      return { ok: res.ok, success: false, data: json?.data, error: errMsg };
+    }
+  } catch (err: any) {
+    const isTimeout = err?.name === 'AbortError';
+    return {
+      ok: false,
+      success: false,
+      error: isTimeout ? 'Quá thời gian kết nối' : (err?.message || 'Lỗi kết nối')
+    };
+  }
+}
+
+function jsonSafeText(str?: string, defaultFallback: string = ''): string {
+  if (!str) return defaultFallback;
+  if (str.includes('Unexpected token') || str.includes('is not valid JSON') || str.includes('<!DOCTYPE') || str.includes('<html')) {
+    return 'Hệ thống đang đồng bộ tiến độ quét...';
+  }
+  return str;
+}
+
 /**
  * Simulates or fetches actual carrier response
  */
@@ -436,30 +492,25 @@ export async function trackSingleOrder(
     upperCode.startsWith('VNSP')
   ) {
     try {
-      const liveRes = await fetch('/api/track/spx', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderCode: cleanCode, force: forceRefresh })
-      });
+      const apiRes = await safeFetchApi('/api/track/spx', { orderCode: cleanCode, force: forceRefresh });
 
-      const json = await liveRes.json();
-      if (liveRes.ok && json.success && json.data) {
-        const liveTimeline = json.data.timeline || [];
-        const classified = classifyLogisticsStatus(json.data.rawStatusText || '', liveTimeline, json.data.statusCategory as TrackingStatusCategory);
+      if (apiRes.success && apiRes.data) {
+        const liveTimeline = apiRes.data.timeline || [];
+        const classified = classifyLogisticsStatus(apiRes.data.rawStatusText || '', liveTimeline, apiRes.data.statusCategory as TrackingStatusCategory);
         const liveData = {
           carrier: 'spx' as CarrierId,
           statusCategory: classified.statusCategory,
-          rawStatusText: json.data.rawStatusText,
-          statusDetail: json.data.statusDetail,
-          scannedAt: json.data.scannedAt || classified.scannedAt,
-          updatedAt: json.data.updatedAt || liveTimeline[0]?.time,
+          rawStatusText: jsonSafeText(apiRes.data.rawStatusText, 'Đang vận chuyển'),
+          statusDetail: jsonSafeText(apiRes.data.statusDetail, ''),
+          scannedAt: apiRes.data.scannedAt || classified.scannedAt,
+          updatedAt: apiRes.data.updatedAt || liveTimeline[0]?.time,
           timeline: liveTimeline,
           error: undefined
         };
         trackingCache.set(cacheKey, liveData);
         return liveData;
       } else {
-        const errDetail = json.error || 'SPX: Không tìm thấy dữ liệu vận đơn trên cổng Shopee Express';
+        const errDetail = apiRes.error || 'SPX: Không tìm thấy dữ liệu vận đơn trên cổng Shopee Express';
         const errData = {
           carrier: 'spx' as CarrierId,
           statusCategory: 'error' as TrackingStatusCategory,
@@ -475,9 +526,9 @@ export async function trackSingleOrder(
         carrier: 'spx' as CarrierId,
         statusCategory: 'error',
         rawStatusText: 'Lỗi mạng khi gọi SPX',
-        statusDetail: err.message || 'Không thể kết nối đến cổng SPX',
+        statusDetail: 'Không thể kết nối đến cổng SPX',
         timeline: [],
-        error: err.message || 'Lỗi mạng'
+        error: 'Lỗi mạng'
       };
     }
   }
@@ -493,32 +544,27 @@ export async function trackSingleOrder(
     (upperCode.length === 8 && /^[A-Z0-9]{8}$/.test(upperCode) && upperCode.startsWith('G'))
   ) {
     try {
-      const liveRes = await fetch('/api/track/ghn', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          orderCode: cleanCode, 
-          cellphone: effectivePhone 
-        })
+      const apiRes = await safeFetchApi('/api/track/ghn', { 
+        orderCode: cleanCode, 
+        cellphone: effectivePhone 
       });
 
-      const json = await liveRes.json();
-      if (liveRes.ok && json.success && json.data) {
-        const liveTimeline = json.data.timeline || [];
-        const classified = classifyLogisticsStatus(json.data.rawStatusText || '', liveTimeline, json.data.statusCategory as TrackingStatusCategory);
+      if (apiRes.success && apiRes.data) {
+        const liveTimeline = apiRes.data.timeline || [];
+        const classified = classifyLogisticsStatus(apiRes.data.rawStatusText || '', liveTimeline, apiRes.data.statusCategory as TrackingStatusCategory);
         const liveData = {
           carrier: 'ghn' as CarrierId,
           statusCategory: classified.statusCategory,
-          rawStatusText: json.data.rawStatusText,
-          statusDetail: json.data.statusDetail,
-          scannedAt: json.data.scannedAt || classified.scannedAt,
+          rawStatusText: jsonSafeText(apiRes.data.rawStatusText, 'Đang vận chuyển'),
+          statusDetail: jsonSafeText(apiRes.data.statusDetail, ''),
+          scannedAt: apiRes.data.scannedAt || classified.scannedAt,
           timeline: liveTimeline,
           error: undefined
         };
         trackingCache.set(cacheKey, liveData);
         return liveData;
       } else {
-        const errDetail = json.error || 'GHN: Không tìm thấy dữ liệu vận đơn';
+        const errDetail = apiRes.error || 'GHN: Không tìm thấy dữ liệu vận đơn';
         const errData = {
           carrier: 'ghn' as CarrierId,
           statusCategory: 'error' as TrackingStatusCategory,
@@ -534,9 +580,9 @@ export async function trackSingleOrder(
         carrier: 'ghn' as CarrierId,
         statusCategory: 'error',
         rawStatusText: 'Lỗi mạng khi gọi GHN',
-        statusDetail: err.message || 'Không thể kết nối đến máy chủ',
+        statusDetail: 'Không thể kết nối đến máy chủ',
         timeline: [],
-        error: err.message || 'Lỗi mạng'
+        error: 'Lỗi mạng'
       };
     }
   }
@@ -555,34 +601,40 @@ export async function trackSingleOrder(
     !upperCode.startsWith('VNGH') &&
     !upperCode.startsWith('NIVN')
   ) {
+    const isCargo = cleanCode.startsWith('530') || (cleanCode.startsWith('53') && cleanCode.length >= 11);
     try {
-      const liveRes = await fetch('/api/track/jnt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          billCode: cleanCode, 
-          cellphone: effectivePhone
-        })
+      const apiRes = await safeFetchApi('/api/track/jnt', { 
+        billCode: cleanCode, 
+        cellphone: effectivePhone
       });
 
-      const json = await liveRes.json();
-      if (liveRes.ok && json.success && json.data) {
-        const liveTimeline = json.data.timeline || [];
-        const classified = classifyLogisticsStatus(json.data.rawStatusText || '', liveTimeline, json.data.statusCategory as TrackingStatusCategory);
+      if (apiRes.success && apiRes.data) {
+        const liveTimeline = apiRes.data.timeline || [];
+        const classified = classifyLogisticsStatus(apiRes.data.rawStatusText || '', liveTimeline, apiRes.data.statusCategory as TrackingStatusCategory);
         const liveData = {
           carrier: 'jt' as CarrierId,
           statusCategory: classified.statusCategory,
-          rawStatusText: json.data.rawStatusText,
-          statusDetail: json.data.statusDetail,
-          scannedAt: json.data.scannedAt || classified.scannedAt,
-          updatedAt: json.data.updatedAt || (liveTimeline[0]?.time),
+          rawStatusText: jsonSafeText(apiRes.data.rawStatusText, 'Đang vận chuyển'),
+          statusDetail: jsonSafeText(apiRes.data.statusDetail, ''),
+          scannedAt: apiRes.data.scannedAt || classified.scannedAt,
+          updatedAt: apiRes.data.updatedAt || (liveTimeline[0]?.time),
           timeline: liveTimeline,
           error: undefined
         };
         trackingCache.set(cacheKey, liveData);
         return liveData;
       } else {
-        const errDetail = json.error || 'J&T: Không tìm thấy thông tin vận đơn hoặc cần 4 số cuối SĐT';
+        if (isCargo) {
+          return {
+            carrier: 'jt' as CarrierId,
+            statusCategory: 'not_scanned' as TrackingStatusCategory,
+            rawStatusText: 'Chờ J&T Cargo lấy hàng (Chưa scan)',
+            statusDetail: 'Mã vận đơn đã tạo trên WMS, chờ bưu cục tiếp nhận',
+            timeline: [],
+            error: undefined
+          };
+        }
+        const errDetail = apiRes.error || 'J&T: Không tìm thấy thông tin vận đơn hoặc cần 4 số cuối SĐT';
         const errData = {
           carrier: 'jt' as CarrierId,
           statusCategory: 'error' as TrackingStatusCategory,
@@ -594,13 +646,23 @@ export async function trackSingleOrder(
         return errData;
       }
     } catch (err: any) {
+      if (isCargo) {
+        return {
+          carrier: 'jt' as CarrierId,
+          statusCategory: 'not_scanned' as TrackingStatusCategory,
+          rawStatusText: 'Chờ J&T Cargo lấy hàng (Chưa scan)',
+          statusDetail: 'Mã vận đơn đã tạo, chờ đồng bộ tiến độ quét',
+          timeline: [],
+          error: undefined
+        };
+      }
       return {
         carrier: 'jt' as CarrierId,
         statusCategory: 'error',
         rawStatusText: 'Lỗi mạng khi gọi J&T',
-        statusDetail: err.message || 'Không thể kết nối đến cổng J&T',
+        statusDetail: 'Không thể kết nối đến cổng J&T lúc này',
         timeline: [],
-        error: err.message || 'Lỗi mạng'
+        error: 'Lỗi mạng'
       };
     }
   }
@@ -608,29 +670,24 @@ export async function trackSingleOrder(
   // 4. Ninja Van tracking
   if (carrier === 'ninjavan' || upperCode.startsWith('NIVN') || upperCode.startsWith('SHP')) {
     try {
-      const liveRes = await fetch('/api/track/ninjavan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ trackingId: cleanCode })
-      });
+      const apiRes = await safeFetchApi('/api/track/ninjavan', { trackingId: cleanCode });
 
-      const json = await liveRes.json();
-      if (liveRes.ok && json.success && json.data) {
-        const liveTimeline = json.data.timeline || [];
-        const classified = classifyLogisticsStatus(json.data.rawStatusText || '', liveTimeline, json.data.statusCategory as TrackingStatusCategory);
+      if (apiRes.success && apiRes.data) {
+        const liveTimeline = apiRes.data.timeline || [];
+        const classified = classifyLogisticsStatus(apiRes.data.rawStatusText || '', liveTimeline, apiRes.data.statusCategory as TrackingStatusCategory);
         const liveData = {
           carrier: 'ninjavan' as CarrierId,
           statusCategory: classified.statusCategory,
-          rawStatusText: json.data.rawStatusText,
-          statusDetail: json.data.statusDetail,
-          scannedAt: json.data.scannedAt || classified.scannedAt,
+          rawStatusText: jsonSafeText(apiRes.data.rawStatusText, 'Đang vận chuyển'),
+          statusDetail: jsonSafeText(apiRes.data.statusDetail, ''),
+          scannedAt: apiRes.data.scannedAt || classified.scannedAt,
           timeline: liveTimeline,
           error: undefined
         };
         trackingCache.set(cacheKey, liveData);
         return liveData;
       } else {
-        const errDetail = json.error || 'Ninja Van: Không tìm thấy dữ liệu vận đơn';
+        const errDetail = apiRes.error || 'Ninja Van: Không tìm thấy dữ liệu vận đơn';
         return {
           carrier: 'ninjavan' as CarrierId,
           statusCategory: 'error' as TrackingStatusCategory,
@@ -645,9 +702,9 @@ export async function trackSingleOrder(
         carrier: 'ninjavan' as CarrierId,
         statusCategory: 'error',
         rawStatusText: 'Lỗi mạng Ninja Van',
-        statusDetail: err.message || 'Không thể kết nối',
+        statusDetail: 'Không thể kết nối',
         timeline: [],
-        error: err.message || 'Lỗi mạng'
+        error: 'Lỗi mạng'
       };
     }
   }
@@ -693,8 +750,14 @@ export async function trackBatchOrders(
     clearTimeout(timeoutId);
     
     if (res.ok) {
-      const json = await res.json();
-      if (json.success && json.results) {
+      const text = await res.text();
+      let json: any = null;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        // Ignored, not JSON
+      }
+      if (json && json.success && json.results) {
         const out: Record<string, any> = {};
         for (const [code, itemRes] of Object.entries<any>(json.results)) {
           const matchingOrder = orders.find(o => o.code === code);
@@ -709,18 +772,23 @@ export async function trackBatchOrders(
             out[code] = {
               carrier: itemRes.data.carrier || carrier,
               statusCategory: classified.statusCategory,
-              rawStatusText: itemRes.data.rawStatusText,
-              statusDetail: itemRes.data.statusDetail,
+              rawStatusText: jsonSafeText(itemRes.data.rawStatusText, 'Đang vận chuyển'),
+              statusDetail: jsonSafeText(itemRes.data.statusDetail, ''),
               scannedAt: itemRes.data.scannedAt || classified.scannedAt,
               updatedAt: itemRes.data.updatedAt || (liveTimeline[0]?.time),
               timeline: liveTimeline,
               error: undefined
             };
           } else {
-            const errDetail = itemRes.error || 'Không tìm thấy dữ liệu vận đơn';
+            let errDetail = itemRes.error || 'Không tìm thấy dữ liệu vận đơn';
+            if (errDetail.includes('Unexpected token') || errDetail.includes('is not valid JSON') || errDetail.includes('<!DOCTYPE')) {
+              errDetail = 'Đang đồng bộ lại với cổng hãng vận chuyển...';
+            }
+            const isCargo = code.startsWith('530') || (code.startsWith('53') && code.length >= 11);
             const isNotFound = errDetail.includes('Không tìm thấy') || 
                                errDetail.includes('chưa có dữ liệu') ||
-                               errDetail.includes('không tồn tại');
+                               errDetail.includes('không tồn tại') ||
+                               isCargo;
 
             if (isNotFound) {
               out[code] = {
