@@ -761,6 +761,214 @@ async function fetchJNTLive(billCode: string, cellphone?: string): Promise<{ suc
   };
 }
 
+// ----------------------------------------------------------------
+// J&T Cargo Live Tracking (office.jtcargo.com.vn API)
+// For bill codes starting with "530" or identified as jt_cargo
+// ----------------------------------------------------------------
+function mapJNTCargoStatus(statusCode: number, statusText: string): { category: string; label: string; isScanned: boolean } {
+  const s = (statusText || '').toLowerCase().trim();
+  const code = statusCode;
+
+  // Delivered (code 60 = Giao hàng thành công)
+  if (code === 60 || s.includes('giao hàng thành công') || s.includes('giao thành công') || s.includes('đã giao') || s.includes('ký nhận')) {
+    return { category: 'delivered', label: statusText || 'Giao hàng thành công', isScanned: true };
+  }
+
+  // Returned (code 70 = Chuyển hoàn)
+  if (code === 70 || s.includes('chuyển hoàn') || s.includes('hoàn hàng') || s.includes('trả hàng') || s.includes('đang hoàn')) {
+    return { category: 'returned', label: statusText || 'Chuyển hoàn J&T Cargo', isScanned: true };
+  }
+
+  // Cancelled
+  if (s.includes('hủy') || s.includes('huỷ') || s.includes('cancel')) {
+    return { category: 'cancelled', label: statusText || 'Đơn hàng đã hủy', isScanned: false };
+  }
+
+  // Picked up (code 10 = Đã nhận hàng / lấy hàng)
+  if (code === 10 || code === 201 || s.includes('đã nhận hàng') || s.includes('lấy hàng') || s.includes('tiếp nhận')) {
+    return { category: 'scanned', label: statusText || 'J&T Cargo đã lấy hàng', isScanned: true };
+  }
+
+  // In transit (code 50 = Đang vận chuyển, 90 = Đến trung tâm)
+  if (
+    code === 50 || code === 90 || code === 203 ||
+    s.includes('đang vận chuyển') || s.includes('vận chuyển') ||
+    s.includes('đến trung tâm') || s.includes('hub') ||
+    s.includes('rời khỏi') || s.includes('đã đến') ||
+    s.includes('đang giao') || s.includes('sắp giao')
+  ) {
+    return { category: 'in_transit', label: statusText || 'Đang vận chuyển (J&T Cargo)', isScanned: true };
+  }
+
+  // Error / Exception
+  if (s.includes('thất lạc') || s.includes('hư hỏng') || s.includes('sự cố') || s.includes('bất thường')) {
+    return { category: 'error', label: statusText || 'Sự cố vận chuyển J&T Cargo', isScanned: true };
+  }
+
+  // Default: treat as scanned if code > 0
+  return {
+    category: code > 0 ? 'scanned' : 'not_scanned',
+    label: statusText || (code > 0 ? 'Đang xử lý (J&T Cargo)' : 'Chưa có dữ liệu J&T Cargo'),
+    isScanned: code > 0
+  };
+}
+
+async function fetchJNTCargoLive(billCode: string, force: boolean = false): Promise<{ success: boolean; data?: any; error?: string; carrier?: string }> {
+  const cleanCode = billCode.trim().toUpperCase();
+  const cacheKey = `jnt_cargo:${cleanCode}`;
+
+  if (!force) {
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      return { success: true, data: cached };
+    }
+  }
+
+  const CARGO_BASE_URL = 'https://office.jtcargo.com.vn';
+  const headers: Record<string, string> = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+    'Referer': 'https://www.jtcargo.vn/',
+    'Origin': 'https://www.jtcargo.vn',
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'vi-VN,vi;q=0.9,en;q=0.8',
+    'Content-Type': 'application/json;charset=UTF-8',
+    'language': 'VN',
+    'authToken': '',
+    'Cache-Control': 'max-age=2, must-revalidate'
+  };
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+      const response = await fetch(`${CARGO_BASE_URL}/official/waybill/trackingCustomerByWaybillNo`, {
+        method: 'POST',
+        signal: controller.signal,
+        headers,
+        body: JSON.stringify({ waybillNo: cleanCode })
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        if (attempt < 1) {
+          await new Promise(r => setTimeout(r, 500));
+          continue;
+        }
+        return { success: false, error: `J&T Cargo API HTTP ${response.status}` };
+      }
+
+      const json = await response.json() as any;
+
+      // API returns { code: 1, succ: true, data: [...] }
+      if (!json.succ || !Array.isArray(json.data) || json.data.length === 0) {
+        return {
+          success: true,
+          data: {
+            carrier: 'jt_cargo',
+            statusCategory: 'not_scanned',
+            rawStatusText: 'Chưa có dữ liệu J&T Cargo',
+            statusDetail: 'Mã vận đơn chưa được ghi nhận trên hệ thống J&T Cargo (Chờ bưu cục quét nhận)',
+            timeline: []
+          }
+        };
+      }
+
+      const waybillData = json.data[0];
+      const details: any[] = waybillData.details || [];
+
+      // Build timeline (details[0] = most recent)
+      const timeline = details.map((d: any) => {
+        const locParts = [d.scanNetworkCity, d.scanNetworkName].filter(Boolean);
+        const location = locParts.length > 0 ? locParts.join(' - ') : 'Mạng lưới J&T Cargo';
+        return {
+          time: formatDate(d.scanTime),
+          statusText: d.customerTracking || d.status || '',
+          location,
+          description: d.scanByName ? `Nhân viên: ${d.scanByName}` : ''
+        };
+      });
+
+      // Latest status = details[0]
+      const latestDetail = details[0];
+      const latestStatusCode = latestDetail?.code || latestDetail?.change || 0;
+      const latestStatusText = latestDetail?.status || '';
+      const latestCustomerTracking = latestDetail?.customerTracking || latestStatusText;
+
+      const mapped = mapJNTCargoStatus(latestStatusCode, latestStatusText);
+
+      // Find pickup event (status "Đã nhận hàng" / code 10 / 201)
+      const pickupEvent = details.slice().reverse().find((d: any) =>
+        d.code === 10 || d.code === 201 || (d.status || '').includes('Đã nhận hàng') || (d.status || '').includes('lấy hàng')
+      );
+      const scannedAt = pickupEvent ? formatDate(pickupEvent.scanTime) : (mapped.isScanned ? formatDate(latestDetail?.scanTime) : undefined);
+
+      // Receiver city info
+      const recipientInfo = waybillData.receiverCityName
+        ? `Đến: ${waybillData.receiverCityName}${waybillData.receiverProvinceName ? ` (${waybillData.receiverProvinceName})` : ''}`
+        : undefined;
+
+      // Extra info
+      const extraInfo: string[] = [];
+      if (waybillData.expressTypeName) extraInfo.push(`Dịch vụ: ${waybillData.expressTypeName}`);
+      if (waybillData.packageTotalWeight) extraInfo.push(`Trọng lượng: ${waybillData.packageTotalWeight} kg`);
+      if (waybillData.packageNumber) extraInfo.push(`Số kiện: ${waybillData.packageNumber}`);
+
+      const statusDetail = latestCustomerTracking || mapped.label;
+
+      const resultData = {
+        carrier: 'jt_cargo',
+        statusCategory: mapped.category,
+        rawStatusText: latestStatusText || mapped.label,
+        statusDetail,
+        updatedAt: latestDetail ? formatDate(latestDetail.scanTime) : undefined,
+        scannedAt,
+        recipientLocation: recipientInfo,
+        extraInfo: extraInfo.join(' | ') || undefined,
+        timeline
+      };
+
+      setInCache(cacheKey, resultData);
+      return { success: true, data: resultData };
+
+    } catch (err: any) {
+      if (attempt === 1) {
+        return { success: false, error: err.message ? `Lỗi kết nối J&T Cargo: ${err.message}` : 'Lỗi kết nối cổng J&T Cargo' };
+      }
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
+
+  return { success: false, error: 'Hệ thống J&T Cargo không phản hồi' };
+}
+
+// J&T Cargo Batch Live Tracking (multiple bill codes)
+async function fetchJNTCargoBatchLive(
+  billCodes: string[],
+  force: boolean = false
+): Promise<Record<string, { success: boolean; data?: any; error?: string; carrier?: string }>> {
+  const cleanCodes = Array.from(new Set(billCodes.map(c => (c || '').trim().toUpperCase()).filter(Boolean)));
+  if (cleanCodes.length === 0) return {};
+
+  const results: Record<string, { success: boolean; data?: any; error?: string; carrier?: string }> = {};
+
+  // Run in parallel with limited concurrency (max 5 at once to avoid rate limiting)
+  const CONCURRENCY = 5;
+  for (let i = 0; i < cleanCodes.length; i += CONCURRENCY) {
+    const chunk = cleanCodes.slice(i, i + CONCURRENCY);
+    await Promise.all(
+      chunk.map(async (code) => {
+        results[code] = await fetchJNTCargoLive(code, force);
+      })
+    );
+    if (i + CONCURRENCY < cleanCodes.length) {
+      await new Promise(r => setTimeout(r, 200)); // Brief pause between batches
+    }
+  }
+
+  return results;
+}
+
 // GHN (Giao Hàng Nhanh) Live Tracking
 async function fetchGHNLive(orderCode: string, cellphone?: string, force: boolean = false): Promise<{ success: boolean; data?: any; error?: string }> {
   const cleanCode = orderCode.trim().toUpperCase();
@@ -2093,20 +2301,63 @@ async function startServer() {
     res.json(result);
   });
 
-  // Track J&T endpoint (supports single code or up to 10+ codes batch)
+  // Track J&T Express endpoint (auto-routes 530* Cargo codes to Cargo API)
   app.post("/api/track/jnt", async (req, res) => {
-    const { billCode, billCodes, cellphone } = req.body;
+    const { billCode, billCodes, cellphone, force } = req.body;
     const rawCodes = billCodes || (typeof billCode === 'string' && billCode.includes(',') ? billCode.split(',') : [billCode]);
     const codes = (Array.isArray(rawCodes) ? rawCodes : [rawCodes]).map((c: any) => String(c).trim()).filter(Boolean);
     if (codes.length === 0) {
       res.status(400).json({ success: false, error: "Missing billCode or billCodes" });
       return;
     }
+    const isForce = Boolean(force);
+    // Separate Cargo codes (530*) from Express codes
+    const cargoCodes = codes.filter((c: string) => /^530\d+$/.test(c) || /^53\d{9,11}$/.test(c));
+    const expressCodes = codes.filter((c: string) => !cargoCodes.includes(c));
+
+    if (cargoCodes.length > 0 && expressCodes.length === 0) {
+      // All cargo codes
+      if (cargoCodes.length === 1) {
+        const result = await fetchJNTCargoLive(cargoCodes[0], isForce);
+        res.json(result);
+      } else {
+        const results = await fetchJNTCargoBatchLive(cargoCodes, isForce);
+        res.json({ success: true, results });
+      }
+    } else if (expressCodes.length > 0 && cargoCodes.length === 0) {
+      // All express codes
+      if (expressCodes.length === 1 && (!billCodes || billCodes.length === 1)) {
+        const result = await fetchJNTLive(expressCodes[0], cellphone);
+        res.json(result);
+      } else {
+        const results = await fetchJNTBatchLive(expressCodes, cellphone, isForce);
+        res.json({ success: true, results });
+      }
+    } else {
+      // Mixed: cargo + express
+      const [cargoResults, expressResults] = await Promise.all([
+        fetchJNTCargoBatchLive(cargoCodes, isForce),
+        fetchJNTBatchLive(expressCodes, cellphone, isForce)
+      ]);
+      res.json({ success: true, results: { ...cargoResults, ...expressResults } });
+    }
+  });
+
+  // Dedicated J&T Cargo tracking endpoint
+  app.post("/api/track/jnt-cargo", async (req, res) => {
+    const { billCode, billCodes, force } = req.body;
+    const rawCodes = billCodes || (typeof billCode === 'string' && billCode.includes(',') ? billCode.split(',') : [billCode]);
+    const codes = (Array.isArray(rawCodes) ? rawCodes : [rawCodes]).map((c: any) => String(c).trim()).filter(Boolean);
+    if (codes.length === 0) {
+      res.status(400).json({ success: false, error: "Missing billCode or billCodes" });
+      return;
+    }
+    const isForce = Boolean(force);
     if (codes.length === 1 && (!billCodes || billCodes.length === 1)) {
-      const result = await fetchJNTLive(codes[0], cellphone);
+      const result = await fetchJNTCargoLive(codes[0], isForce);
       res.json(result);
     } else {
-      const results = await fetchJNTBatchLive(codes, cellphone);
+      const results = await fetchJNTCargoBatchLive(codes, isForce);
       res.json({ success: true, results });
     }
   });
@@ -2151,7 +2402,8 @@ async function startServer() {
     const results: Record<string, any> = {};
 
     // 1. Properly resolve carrier based on tracking code format first (prevents mislabelled J&T notes from breaking SPX/GHN)
-    const jtItems: typeof orders = [];
+    const jtExpressItems: typeof orders = [];
+    const jtCargoItems: typeof orders = [];
     const otherItems: typeof orders = [];
 
     for (const item of orders) {
@@ -2186,30 +2438,43 @@ async function startServer() {
       } else if (upper.startsWith('VT') || upper.startsWith('VTP')) {
         resolvedCarrier = 'viettelpost';
       } else if (
+        // J&T Cargo: 530xxxxxxxxx (12-13 digit codes starting with 530)
+        /^530\d+$/.test(upper) ||
+        (/^53\d+$/.test(upper) && upper.length >= 11 && upper.length <= 13)
+      ) {
+        resolvedCarrier = 'jt_cargo';
+      } else if (
         upper.startsWith('8') ||
         upper.startsWith('JT') || 
         upper.startsWith('JTE') || 
-        upper.startsWith('JNT') || 
-        upper.startsWith('530') || 
-        ((upper.startsWith('53')) && upper.length >= 11 && upper.length <= 13 && /^\d+$/.test(upper))
+        upper.startsWith('JNT')
       ) {
         resolvedCarrier = 'jt';
       }
 
       item.carrier = resolvedCarrier;
 
-      if (resolvedCarrier === 'jt') {
-        jtItems.push(item);
+      if (resolvedCarrier === 'jt_cargo') {
+        jtCargoItems.push(item);
+      } else if (resolvedCarrier === 'jt') {
+        jtExpressItems.push(item);
       } else {
         otherItems.push(item);
       }
     }
 
-    // Process J&T in chunks of up to 10 codes (1 HTTP call per 10 codes)
+    // Process J&T Cargo (530* codes) - parallel with concurrency 5
+    const cargoCodes = jtCargoItems.map(o => o.code);
+    const cargoResults = await fetchJNTCargoBatchLive(cargoCodes, isGlobalForce);
+    for (const [code, resObj] of Object.entries(cargoResults)) {
+      results[code] = resObj;
+    }
+
+    // Process J&T Express in chunks of up to 10 codes (1 HTTP call per 10 codes)
     const JT_CHUNK_SIZE = 10;
-    const jtChunks: (typeof jtItems)[] = [];
-    for (let i = 0; i < jtItems.length; i += JT_CHUNK_SIZE) {
-      jtChunks.push(jtItems.slice(i, i + JT_CHUNK_SIZE));
+    const jtChunks: (typeof jtExpressItems)[] = [];
+    for (let i = 0; i < jtExpressItems.length; i += JT_CHUNK_SIZE) {
+      jtChunks.push(jtExpressItems.slice(i, i + JT_CHUNK_SIZE));
     }
     await Promise.all(
       jtChunks.map(async (jtChunk) => {
