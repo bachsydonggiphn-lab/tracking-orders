@@ -2446,7 +2446,8 @@ async function startServer() {
   // Clear tracking liveCache endpoint
   app.post("/api/track/clear-cache", (req, res) => {
     liveCache.clear();
-    res.json({ success: true, message: "Cleared live logistics cache" });
+    invalidateOrdersCache();
+    res.json({ success: true, message: "Cleared live logistics cache and orders RAM cache" });
   });
 
   // Batch track endpoint (groups J&T in chunks of 10 for native multi-tracking, other carriers concurrent)

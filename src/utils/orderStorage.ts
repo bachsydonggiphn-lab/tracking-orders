@@ -123,6 +123,45 @@ export function normalizeOrderList(rawOrders: OrderItem[]): OrderItem[] {
       };
     }
 
+    // Auto-correct J&T Cargo orders (codes starting with 530)
+    if (cleanCode.startsWith('530') || (cleanCode.startsWith('53') && cleanCode.length >= 11)) {
+      const detail = (updated.statusDetail || '').toLowerCase();
+      const hasDelivered = detail.includes('ký nhận') || detail.includes('giao thành công');
+      const hasTransit = detail.includes('đã đến') || detail.includes('rời khỏi') || detail.includes('trung chuyển') || detail.includes('vận chuyển') || Boolean(updated.scannedAt);
+      const isNotFound = detail.includes('chưa có dữ liệu');
+
+      if (hasDelivered && updated.statusCategory !== 'delivered') {
+        updated = {
+          ...updated,
+          carrier: 'jt',
+          statusCategory: 'delivered',
+          rawStatusText: 'Giao thành công (Đã ký nhận)',
+          error: undefined
+        };
+      } else if (hasTransit && updated.statusCategory === 'error') {
+        updated = {
+          ...updated,
+          carrier: 'jt',
+          statusCategory: 'in_transit',
+          rawStatusText: 'Đang vận chuyển',
+          error: undefined
+        };
+      } else if (isNotFound && updated.statusCategory === 'error') {
+        updated = {
+          ...updated,
+          carrier: 'jt',
+          statusCategory: 'not_scanned',
+          rawStatusText: 'Chờ J&T Cargo lấy hàng (Chưa scan)',
+          error: undefined
+        };
+      } else if (updated.carrier !== 'jt') {
+        updated = {
+          ...updated,
+          carrier: 'jt'
+        };
+      }
+    }
+
     return updated;
   });
 }
