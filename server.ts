@@ -1872,30 +1872,52 @@ async function startServer() {
   // Initialize SQLite database
   await initSqliteDb();
 
-  // Get orders from SQLite (Instant query, zero file read bottleneck, GZIP compressed)
+  // In-memory RAM Cache for high-speed serving (1-5ms response instead of 13s DB queries)
+  let cachedOrdersPayload: string | null = null;
+  let cachedOrdersGzip: Buffer | null = null;
+  let cachedOrdersTimestamp: number = 0;
+  let cachedOrdersStats: any = null;
+  const ORDERS_CACHE_TTL = 60000; // 60s cache TTL
+
+  const invalidateOrdersCache = () => {
+    cachedOrdersPayload = null;
+    cachedOrdersGzip = null;
+    cachedOrdersTimestamp = 0;
+    cachedOrdersStats = null;
+  };
+
+  // Get orders from SQLite (Instant RAM Cache + GZIP, zero DB query bottleneck)
   const handleGetOrders = async (req: express.Request, res: express.Response) => {
     try {
-      const orders = await getAllSqliteOrders();
-      const stats = await getSqliteStats();
-      const payloadString = JSON.stringify({
-        success: true,
-        orders,
-        count: orders.length,
-        stats,
-        lastSaved: new Date().toISOString()
-      });
+      const now = Date.now();
+      if (!cachedOrdersGzip || (now - cachedOrdersTimestamp > ORDERS_CACHE_TTL)) {
+        const orders = await getAllSqliteOrders();
+        const stats = await getSqliteStats();
+        cachedOrdersStats = stats;
+        const payloadString = JSON.stringify({
+          success: true,
+          orders,
+          count: orders.length,
+          stats,
+          lastSaved: new Date().toISOString()
+        });
+
+        cachedOrdersPayload = payloadString;
+        cachedOrdersGzip = zlib.gzipSync(payloadString);
+        cachedOrdersTimestamp = now;
+      }
 
       const acceptEncoding = (req.headers["accept-encoding"] || "") as string;
-      if (acceptEncoding.includes("gzip")) {
-        const compressed = zlib.gzipSync(payloadString);
+      if (acceptEncoding.includes("gzip") && cachedOrdersGzip) {
         res.setHeader("Content-Type", "application/json; charset=utf-8");
         res.setHeader("Content-Encoding", "gzip");
         res.setHeader("Vary", "Accept-Encoding");
-        return res.send(compressed);
+        res.setHeader("Cache-Control", "public, max-age=10");
+        return res.send(cachedOrdersGzip);
       }
 
       res.setHeader("Content-Type", "application/json; charset=utf-8");
-      return res.send(payloadString);
+      return res.send(cachedOrdersPayload);
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err.message });
     }
@@ -1922,10 +1944,14 @@ async function startServer() {
     }
   });
 
-  // Fast stats endpoint
+  // Fast stats endpoint (using RAM cache if valid)
   app.get("/api/orders/stats", async (req, res) => {
     try {
+      if (cachedOrdersStats && (Date.now() - cachedOrdersTimestamp <= ORDERS_CACHE_TTL)) {
+        return res.json({ success: true, stats: cachedOrdersStats });
+      }
       const stats = await getSqliteStats();
+      cachedOrdersStats = stats;
       return res.json({ success: true, stats });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err.message });
@@ -1940,6 +1966,7 @@ async function startServer() {
         return res.status(400).json({ success: false, error: "orders must be an array" });
       }
       const updatedCount = await upsertSqliteOrders(orders);
+      invalidateOrdersCache();
       const stats = await getSqliteStats();
       return res.json({
         success: true,
@@ -1961,6 +1988,7 @@ async function startServer() {
   const handleClearOrders = async (req: express.Request, res: express.Response) => {
     try {
       await clearSqliteOrders();
+      invalidateOrdersCache();
       const legacyState = path.join(process.cwd(), "data", "orders_state.json");
       if (fs.existsSync(legacyState)) {
         try { fs.unlinkSync(legacyState); } catch {}
