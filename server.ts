@@ -2260,11 +2260,16 @@ async function startServer() {
     res.json({ success: true, results });
   });
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  // Vite middleware for development vs Production static serving
+  const distPath = path.join(process.cwd(), "dist");
+  const hasDist = fs.existsSync(path.join(distPath, "index.html"));
+  const isProduction = process.env.NODE_ENV === "production" || hasDist;
+
+  if (!isProduction) {
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
+        allowedHosts: true,
         watch: {
           ignored: [
             "**/data/**",
@@ -2280,7 +2285,6 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
