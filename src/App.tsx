@@ -445,26 +445,52 @@ export default function App() {
             const res = batchResults[codeKey] 
               || (codeKey ? batchResults[codeKey.trim()] : undefined)
               || (codeKey ? batchResults[codeKey.trim().toUpperCase()] : undefined);
+
+            const oldHasScan = Boolean(
+              item.scannedAt || 
+              item.statusCategory === 'scanned' || 
+              item.statusCategory === 'in_transit' || 
+              item.statusCategory === 'delivered' ||
+              (item.statusDetail && (
+                item.statusDetail.includes('đã lấy hàng') || 
+                item.statusDetail.includes('quét mã thành công') ||
+                item.statusDetail.includes('ký nhận') ||
+                item.statusDetail.includes('giao thành công')
+              ))
+            );
+
             if (res) {
-              ordersRef.current[idx] = {
-                ...item,
-                carrier: res.carrier,
-                statusCategory: res.statusCategory,
-                rawStatusText: res.rawStatusText,
-                statusDetail: res.statusDetail,
-                scannedAt: res.scannedAt,
-                updatedAt: res.updatedAt,
-                timeline: res.timeline,
-                error: res.error,
-                isChecking: false
-              };
+              // NẾU đơn đã có thông tin scan thành công trước đó mà lần gọi mới bị lỗi mạng/timeout:
+              // TUYỆT ĐỐI KHÔNG ĐÈ TRẠNG THÁI LỖI LÊN ĐƠN ĐÃ SCAN!
+              if (res.statusCategory === 'error' && oldHasScan) {
+                ordersRef.current[idx] = {
+                  ...item,
+                  isChecking: false
+                };
+              } else {
+                ordersRef.current[idx] = {
+                  ...item,
+                  carrier: res.carrier || item.carrier,
+                  statusCategory: res.statusCategory,
+                  rawStatusText: res.rawStatusText,
+                  statusDetail: res.statusDetail,
+                  scannedAt: res.scannedAt || (oldHasScan ? item.scannedAt : undefined),
+                  updatedAt: res.updatedAt || item.updatedAt,
+                  timeline: (res.timeline && res.timeline.length > 0) ? res.timeline : item.timeline,
+                  error: res.error,
+                  isChecking: false
+                };
+              }
             } else {
+              // Khi hệ thống không nhận được kết quả (timeout/bận)
               ordersRef.current[idx] = {
                 ...item,
                 isChecking: false,
-                statusCategory: 'error',
-                rawStatusText: 'Lỗi tra cứu',
-                error: 'Không nhận được dữ liệu từ hệ thống'
+                ...(oldHasScan ? {} : {
+                  statusCategory: 'not_scanned',
+                  rawStatusText: 'Chưa scan (Chờ quét lại)',
+                  error: undefined
+                })
               };
             }
           }
@@ -472,12 +498,26 @@ export default function App() {
           for (const idx of currentChunk) {
             const item = ordersRef.current[idx];
             if (item) {
+              const oldHasScan = Boolean(
+                item.scannedAt || 
+                item.statusCategory === 'scanned' || 
+                item.statusCategory === 'in_transit' || 
+                item.statusCategory === 'delivered' ||
+                (item.statusDetail && (
+                  item.statusDetail.includes('đã lấy hàng') || 
+                  item.statusDetail.includes('quét mã thành công') ||
+                  item.statusDetail.includes('ký nhận') ||
+                  item.statusDetail.includes('giao thành công')
+                ))
+              );
               ordersRef.current[idx] = {
                 ...item,
                 isChecking: false,
-                statusCategory: 'error',
-                rawStatusText: 'Lỗi kết nối',
-                error: err?.message || 'Lỗi mạng khi tra cứu'
+                ...(oldHasScan ? {} : {
+                  statusCategory: 'not_scanned',
+                  rawStatusText: 'Chưa scan (Chờ quét lại)',
+                  error: undefined
+                })
               };
             }
           }

@@ -173,20 +173,66 @@ export function normalizeOrderList(rawOrders: OrderItem[]): OrderItem[] {
           rawStatusText: updated.rawStatusText?.includes('giao') ? 'Đang giao hàng' : 'Đang vận chuyển',
           error: undefined
         };
-      } else if (updated.statusCategory === 'error') {
+      }
+    }
+
+    // Auto-heal any orders wrongly marked as 'error' when they actually have valid scan/pickup info
+    if (updated.statusCategory === 'error' || (updated.rawStatusText || '').includes('Lỗi tra cứu') || (updated.rawStatusText || '').includes('Lỗi kết nối')) {
+      const detail = (updated.statusDetail || '').toLowerCase();
+      const hasPickupScan = Boolean(
+        updated.scannedAt || 
+        detail.includes('đã lấy hàng') || 
+        detail.includes('quét mã thành công') ||
+        detail.includes('bưu tá đã lấy') ||
+        detail.includes('đã nhận kiện')
+      );
+      const hasDelivered = detail.includes('ký nhận') || detail.includes('giao thành công') || detail.includes('đã giao hàng');
+      const hasTransit = detail.includes('trung chuyển') || detail.includes('luân chuyển') || detail.includes('đang giao') || detail.includes('đang vận chuyển') || detail.includes('đến kho') || detail.includes('rời kho');
+      const hasCancel = detail.includes('hủy') || detail.includes('huỷ') || detail.includes('cancel');
+
+      if (hasCancel) {
         updated = {
           ...updated,
-          carrier: 'jt',
-          statusCategory: 'not_scanned',
-          rawStatusText: 'Chờ J&T Cargo lấy hàng (Chưa scan)',
-          statusDetail: 'Mã vận đơn chưa được ghi nhận trên hệ thống J&T Cargo (Chờ bưu cục quét nhận)',
+          statusCategory: 'cancelled',
+          rawStatusText: 'Đơn hàng đã hủy',
           error: undefined
         };
-      } else if (updated.carrier !== 'jt') {
+      } else if (hasDelivered) {
         updated = {
           ...updated,
-          carrier: 'jt'
+          statusCategory: 'delivered',
+          rawStatusText: 'Giao thành công (Đã ký nhận)',
+          error: undefined
         };
+      } else if (hasTransit) {
+        updated = {
+          ...updated,
+          statusCategory: 'in_transit',
+          rawStatusText: 'Đang vận chuyển',
+          error: undefined
+        };
+      } else if (hasPickupScan) {
+        updated = {
+          ...updated,
+          statusCategory: 'scanned',
+          rawStatusText: updated.carrier === 'spx' ? 'Đã lấy hàng - SPX đã nhận kiện' : 'Đã lấy hàng - Bưu tá đã quét mã',
+          error: undefined
+        };
+      } else {
+        // If it is pure network/timeout error on an unscanned order, NEVER leave it stuck in scary red 'error'!
+        // Mark as 'not_scanned' so it sits cleanly in 'Chưa scan' tab ready for re-scan:
+        const isNetworkTimeout = (updated.statusDetail || '').includes('Quá thời gian') || 
+                                 (updated.statusDetail || '').includes('Không thể kết nối') ||
+                                 (updated.statusDetail || '').includes('Lỗi mạng') ||
+                                 (updated.rawStatusText || '').includes('Lỗi kết nối');
+        if (isNetworkTimeout) {
+          updated = {
+            ...updated,
+            statusCategory: 'not_scanned',
+            rawStatusText: 'Chưa scan (Chờ quét lại)',
+            error: undefined
+          };
+        }
       }
     }
 

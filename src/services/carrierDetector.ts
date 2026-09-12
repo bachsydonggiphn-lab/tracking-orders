@@ -25,8 +25,8 @@ export const CARRIERS: Record<CarrierId, CarrierConfig> = {
   },
   jt: {
     id: 'jt',
-    name: 'J&T Express / J&T Cargo',
-    shortName: 'J&T (Cargo)',
+    name: 'J&T Express',
+    shortName: 'J&T Express',
     logoColor: '#E60012',
     badgeBg: 'bg-rose-50 text-rose-700 border-rose-200',
     badgeText: 'text-rose-600',

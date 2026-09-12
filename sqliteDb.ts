@@ -111,29 +111,57 @@ export async function getAllSqliteOrders(): Promise<OrderItem[]> {
     ORDER BY rowid ASC
   `);
 
-  return res.rows.map(r => ({
-    id: String(r.id || ''),
-    trackingCode: String(r.tracking_code || ''),
-    carrier: (r.carrier || 'unknown') as any,
-    carrierChannel: r.carrier_channel ? String(r.carrier_channel) : undefined,
-    statusCategory: (r.status_category || 'not_scanned') as any,
-    rawStatusText: r.raw_status_text ? String(r.raw_status_text) : 'Chưa kiểm tra',
-    statusDetail: r.status_detail ? String(r.status_detail) : undefined,
-    scannedAt: r.scanned_at ? String(r.scanned_at) : undefined,
-    updatedAt: r.updated_at ? String(r.updated_at) : undefined,
-    directUrl: undefined,
-    extraInfo: {
-      orderNo: r.order_no ? String(r.order_no) : undefined,
-      orderCreatedAt: r.order_created_at ? String(r.order_created_at) : undefined,
-      customerName: r.customer_name ? String(r.customer_name) : undefined,
-      customerPhone: r.customer_phone ? String(r.customer_phone) : undefined,
-      warehouseId: r.warehouse_id ? String(r.warehouse_id) : undefined,
-      warehouseName: r.warehouse_name ? String(r.warehouse_name) : undefined,
-      source: r.source ? String(r.source) : undefined,
-    },
-    isChecking: false,
-    timeline: [] // Lazy-loaded on demand when user clicks to inspect order details
-  }));
+  return res.rows.map(r => {
+    let cat = (r.status_category || 'not_scanned') as any;
+    let rawStatus = r.raw_status_text ? String(r.raw_status_text) : 'Chưa kiểm tra';
+    const detail = (r.status_detail ? String(r.status_detail) : '').toLowerCase();
+    const scannedAt = r.scanned_at ? String(r.scanned_at) : undefined;
+
+    // Auto-heal misclassified error rows with valid scan info or network timeouts
+    if (cat === 'error' || rawStatus.includes('Lỗi tra cứu') || rawStatus.includes('Lỗi kết nối')) {
+      const hasPickup = Boolean(scannedAt || detail.includes('đã lấy hàng') || detail.includes('quét mã thành công') || detail.includes('bưu tá đã lấy') || detail.includes('đã nhận kiện'));
+      const hasDelivered = detail.includes('ký nhận') || detail.includes('giao thành công') || detail.includes('đã giao hàng');
+      const hasTransit = detail.includes('đang vận chuyển') || detail.includes('trung chuyển') || detail.includes('luân chuyển') || detail.includes('đang giao');
+
+      if (hasDelivered) {
+        cat = 'delivered';
+        rawStatus = 'Giao thành công (Đã ký nhận)';
+      } else if (hasTransit) {
+        cat = 'in_transit';
+        rawStatus = 'Đang vận chuyển';
+      } else if (hasPickup) {
+        cat = 'scanned';
+        rawStatus = r.carrier === 'spx' ? 'Đã lấy hàng - SPX đã nhận kiện' : 'Đã lấy hàng - Bưu tá đã quét mã';
+      } else {
+        cat = 'not_scanned';
+        rawStatus = 'Chưa scan (Chờ quét lại)';
+      }
+    }
+
+    return {
+      id: String(r.id || ''),
+      trackingCode: String(r.tracking_code || ''),
+      carrier: (r.carrier || 'unknown') as any,
+      carrierChannel: r.carrier_channel ? String(r.carrier_channel) : undefined,
+      statusCategory: cat,
+      rawStatusText: rawStatus,
+      statusDetail: r.status_detail ? String(r.status_detail) : undefined,
+      scannedAt,
+      updatedAt: r.updated_at ? String(r.updated_at) : undefined,
+      directUrl: undefined,
+      extraInfo: {
+        orderNo: r.order_no ? String(r.order_no) : undefined,
+        orderCreatedAt: r.order_created_at ? String(r.order_created_at) : undefined,
+        customerName: r.customer_name ? String(r.customer_name) : undefined,
+        customerPhone: r.customer_phone ? String(r.customer_phone) : undefined,
+        warehouseId: r.warehouse_id ? String(r.warehouse_id) : undefined,
+        warehouseName: r.warehouse_name ? String(r.warehouse_name) : undefined,
+        source: r.source ? String(r.source) : undefined,
+      },
+      isChecking: false,
+      timeline: [] // Lazy-loaded on demand when user clicks to inspect order details
+    };
+  });
 }
 
 /**
@@ -244,21 +272,21 @@ export async function upsertSqliteOrders(orders: OrderItem[]): Promise<number> {
     const old = existingMap.get(cleanCode);
 
     if (old) {
-      // If old was ALREADY scanned/in_transit/delivered/returned, an unscanned placeholder MUST NEVER overwrite it!
+      // If old was ALREADY scanned/in_transit/delivered/returned, an unscanned or error placeholder MUST NEVER overwrite it!
       const oldIsScanned = Boolean(
-        (old.statusCategory && old.statusCategory !== 'not_scanned') ||
+        (old.statusCategory && old.statusCategory !== 'not_scanned' && old.statusCategory !== 'error') ||
         old.scannedAt ||
         (Array.isArray(old.timeline) && old.timeline.length > 0 && old.timeline.some(t => !t.statusText?.includes('chuẩn bị') && !t.statusText?.includes('chờ lấy')))
       );
 
       const itemHasNewCarrierScan = Boolean(
-        (item.statusCategory && item.statusCategory !== 'not_scanned') ||
-        item.scannedAt ||
+        (item.statusCategory && item.statusCategory !== 'not_scanned' && item.statusCategory !== 'error') ||
+        (item.scannedAt && item.statusCategory !== 'error') ||
         (Array.isArray(item.timeline) && item.timeline.length > 0 && item.timeline.some(t => !t.statusText?.includes('chuẩn bị') && !t.statusText?.includes('chờ lấy')))
       );
 
-      if (oldIsScanned && !itemHasNewCarrierScan && item.statusCategory !== 'cancelled') {
-        // Old was ALREADY scanned by courier/hub! Unscanned item MUST NOT overwrite scanned status!
+      if (oldIsScanned && (!itemHasNewCarrierScan || item.statusCategory === 'error') && item.statusCategory !== 'cancelled') {
+        // Old was ALREADY scanned by courier/hub! Unscanned or error item MUST NOT overwrite scanned status!
         merged = {
           ...item,
           ...old,

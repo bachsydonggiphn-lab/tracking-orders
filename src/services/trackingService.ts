@@ -511,6 +511,21 @@ export async function trackSingleOrder(
         return liveData;
       } else {
         const errDetail = apiRes.error || 'SPX: Không tìm thấy dữ liệu vận đơn trên cổng Shopee Express';
+        const isTimeoutOrNetwork = errDetail.includes('Quá thời gian') || errDetail.includes('kết nối') || errDetail.includes('bảo trì') || errDetail.includes('bận');
+        const isNotFound = errDetail.includes('Không tìm thấy') || errDetail.includes('chưa có') || errDetail.includes('không tồn tại');
+        
+        if (isTimeoutOrNetwork || isNotFound) {
+          return {
+            carrier: 'spx' as CarrierId,
+            statusCategory: 'not_scanned' as TrackingStatusCategory,
+            rawStatusText: 'Chờ Shopee Express lấy hàng (Chưa scan)',
+            statusDetail: isTimeoutOrNetwork 
+              ? 'Hệ thống đang kết nối với cổng SPX, vui lòng thử lại sau giây lát' 
+              : 'Mã vận đơn đã tạo trên Shopee, bưu tá SPX chưa tới lấy kiện',
+            timeline: [],
+            error: undefined
+          };
+        }
         const errData = {
           carrier: 'spx' as CarrierId,
           statusCategory: 'error' as TrackingStatusCategory,
@@ -524,11 +539,11 @@ export async function trackSingleOrder(
     } catch (err: any) {
       return {
         carrier: 'spx' as CarrierId,
-        statusCategory: 'error',
-        rawStatusText: 'Lỗi mạng khi gọi SPX',
-        statusDetail: 'Không thể kết nối đến cổng SPX',
+        statusCategory: 'not_scanned',
+        rawStatusText: 'Chờ Shopee Express lấy hàng (Chưa scan)',
+        statusDetail: 'Hệ thống đang kết nối với cổng SPX...',
         timeline: [],
-        error: 'Lỗi mạng'
+        error: undefined
       };
     }
   }
@@ -565,6 +580,21 @@ export async function trackSingleOrder(
         return liveData;
       } else {
         const errDetail = apiRes.error || 'GHN: Không tìm thấy dữ liệu vận đơn';
+        const isTimeoutOrNetwork = errDetail.includes('Quá thời gian') || errDetail.includes('kết nối') || errDetail.includes('bảo trì') || errDetail.includes('bận');
+        const isNotFound = errDetail.includes('Không tìm thấy') || errDetail.includes('chưa có') || errDetail.includes('không tồn tại');
+        
+        if (isTimeoutOrNetwork || isNotFound) {
+          return {
+            carrier: 'ghn' as CarrierId,
+            statusCategory: 'not_scanned' as TrackingStatusCategory,
+            rawStatusText: 'Chờ GHN lấy hàng (Chưa scan)',
+            statusDetail: isTimeoutOrNetwork 
+              ? 'Hệ thống đang kết nối với cổng GHN, vui lòng thử lại sau giây lát' 
+              : 'Mã vận đơn đã tạo, chờ bưu tá GHN tới lấy hàng',
+            timeline: [],
+            error: undefined
+          };
+        }
         const errData = {
           carrier: 'ghn' as CarrierId,
           statusCategory: 'error' as TrackingStatusCategory,
@@ -578,11 +608,11 @@ export async function trackSingleOrder(
     } catch (err: any) {
       return {
         carrier: 'ghn' as CarrierId,
-        statusCategory: 'error',
-        rawStatusText: 'Lỗi mạng khi gọi GHN',
-        statusDetail: 'Không thể kết nối đến máy chủ',
+        statusCategory: 'not_scanned',
+        rawStatusText: 'Chờ GHN lấy hàng (Chưa scan)',
+        statusDetail: 'Hệ thống đang kết nối lại với cổng GHN...',
         timeline: [],
-        error: 'Lỗi mạng'
+        error: undefined
       };
     }
   }
@@ -624,17 +654,22 @@ export async function trackSingleOrder(
         trackingCache.set(cacheKey, liveData);
         return liveData;
       } else {
-        if (isCargo) {
+        const errDetail = apiRes.error || 'J&T: Không tìm thấy thông tin vận đơn hoặc cần 4 số cuối SĐT';
+        const isTimeoutOrNetwork = errDetail.includes('Quá thời gian') || errDetail.includes('kết nối') || errDetail.includes('bảo trì') || errDetail.includes('bận');
+        const isNotFound = errDetail.includes('Không tìm thấy') || errDetail.includes('chưa có') || errDetail.includes('không tồn tại') || isCargo;
+        
+        if (isTimeoutOrNetwork || isNotFound) {
           return {
             carrier: 'jt' as CarrierId,
             statusCategory: 'not_scanned' as TrackingStatusCategory,
-            rawStatusText: 'Chờ J&T Cargo lấy hàng (Chưa scan)',
-            statusDetail: 'Mã vận đơn đã tạo trên WMS, chờ bưu cục tiếp nhận',
+            rawStatusText: isCargo ? 'Chờ J&T Cargo lấy hàng (Chưa scan)' : 'Chờ J&T Express lấy hàng (Chưa scan)',
+            statusDetail: isTimeoutOrNetwork 
+              ? 'Hệ thống đang kết nối với cổng J&T, vui lòng thử lại sau giây lát' 
+              : 'Mã vận đơn đã tạo trên WMS, chờ bưu tá quét nhận',
             timeline: [],
             error: undefined
           };
         }
-        const errDetail = apiRes.error || 'J&T: Không tìm thấy thông tin vận đơn hoặc cần 4 số cuối SĐT';
         const errData = {
           carrier: 'jt' as CarrierId,
           statusCategory: 'error' as TrackingStatusCategory,
@@ -646,23 +681,13 @@ export async function trackSingleOrder(
         return errData;
       }
     } catch (err: any) {
-      if (isCargo) {
-        return {
-          carrier: 'jt' as CarrierId,
-          statusCategory: 'not_scanned' as TrackingStatusCategory,
-          rawStatusText: 'Chờ J&T Cargo lấy hàng (Chưa scan)',
-          statusDetail: 'Mã vận đơn đã tạo, chờ đồng bộ tiến độ quét',
-          timeline: [],
-          error: undefined
-        };
-      }
       return {
         carrier: 'jt' as CarrierId,
-        statusCategory: 'error',
-        rawStatusText: 'Lỗi mạng khi gọi J&T',
-        statusDetail: 'Không thể kết nối đến cổng J&T lúc này',
+        statusCategory: 'not_scanned' as TrackingStatusCategory,
+        rawStatusText: isCargo ? 'Chờ J&T Cargo lấy hàng (Chưa scan)' : 'Chờ J&T Express lấy hàng (Chưa scan)',
+        statusDetail: 'Mã vận đơn đã tạo, chờ đồng bộ tiến độ quét',
         timeline: [],
-        error: 'Lỗi mạng'
+        error: undefined
       };
     }
   }
@@ -785,28 +810,33 @@ export async function trackBatchOrders(
               errDetail = 'Đang đồng bộ lại với cổng hãng vận chuyển...';
             }
             const isCargo = code.startsWith('530') || (code.startsWith('53') && code.length >= 11);
+            const isTimeoutOrNetwork = errDetail.includes('Quá thời gian') || errDetail.includes('kết nối') || errDetail.includes('bảo trì') || errDetail.includes('bận');
             const isNotFound = errDetail.includes('Không tìm thấy') || 
                                errDetail.includes('chưa có dữ liệu') ||
+                               errDetail.includes('chưa có') ||
                                errDetail.includes('không tồn tại') ||
-                               isCargo;
+                               isCargo ||
+                               isTimeoutOrNetwork;
 
             if (isNotFound) {
               out[code] = {
                 carrier,
                 statusCategory: 'not_scanned',
-                rawStatusText: `Chờ ${carrier === 'jt' ? 'J&T Express' : carrier === 'spx' ? 'SPX' : 'bưu tá'} lấy hàng (Chưa scan)`,
-                statusDetail: 'Mã vận đơn đã tạo trên WMS nhưng chưa có lịch trình quét tiếp nhận trên cổng tra cứu của hãng',
+                rawStatusText: `Chờ ${carrier === 'jt' ? (isCargo ? 'J&T Cargo' : 'J&T Express') : carrier === 'spx' ? 'SPX' : 'bưu tá'} lấy hàng (Chưa scan)`,
+                statusDetail: isTimeoutOrNetwork 
+                  ? 'Đang kết nối lại với cổng hãng vận chuyển...' 
+                  : 'Mã vận đơn đã tạo trên WMS nhưng chưa có lịch trình quét tiếp nhận trên cổng tra cứu của hãng',
                 timeline: [],
                 error: undefined
               };
             } else {
               out[code] = {
                 carrier,
-                statusCategory: 'error',
-                rawStatusText: 'Lỗi tra cứu',
+                statusCategory: 'not_scanned',
+                rawStatusText: `Chờ ${carrier === 'jt' ? 'J&T Express' : carrier === 'spx' ? 'SPX' : 'bưu tá'} lấy hàng`,
                 statusDetail: errDetail,
                 timeline: [],
-                error: errDetail
+                error: undefined
               };
             }
           }
@@ -828,11 +858,11 @@ export async function trackBatchOrders(
       } catch (err: any) {
         out[o.code] = {
           carrier: o.carrier || 'unknown',
-          statusCategory: 'error',
-          rawStatusText: 'Lỗi mạng',
-          statusDetail: err.message || 'Không thể kết nối',
+          statusCategory: 'not_scanned',
+          rawStatusText: 'Chờ quét lại',
+          statusDetail: 'Không thể kết nối tạm thời, hệ thống sẽ tự động thử lại',
           timeline: [],
-          error: err.message
+          error: undefined
         };
       }
     })
