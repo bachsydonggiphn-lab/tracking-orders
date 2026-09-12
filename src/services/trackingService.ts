@@ -663,9 +663,9 @@ export async function trackSingleOrder(
             carrier: 'jt' as CarrierId,
             statusCategory: 'not_scanned' as TrackingStatusCategory,
             rawStatusText: isCargo ? 'Chờ J&T Cargo lấy hàng (Chưa scan)' : 'Chờ J&T Express lấy hàng (Chưa scan)',
-            statusDetail: isTimeoutOrNetwork 
-              ? 'Hệ thống đang kết nối với cổng J&T, vui lòng thử lại sau giây lát' 
-              : 'Mã vận đơn đã tạo trên WMS, chờ bưu tá quét nhận',
+            statusDetail: isCargo 
+              ? 'Mã vận đơn đã tạo trên WMS, đang chờ bưu cục J&T Cargo quét tiếp nhận'
+              : 'Đơn mới xuất kho WMS, đang chờ bưu tá J&T Express đến lấy kiện và quét mã',
             timeline: [],
             error: undefined
           };
