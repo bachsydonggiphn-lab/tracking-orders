@@ -188,14 +188,18 @@ export default function App() {
       if (selectedCarrier !== 'all') {
         if (selectedCarrier === 'jt_cargo') {
           const code = (item.trackingCode || '').trim().toUpperCase();
-          const isCargo = item.carrier === 'jt' && (code.startsWith('530') || code.startsWith('53'));
+          const isCargo = item.carrier === 'jt_cargo' || (item.carrier === 'jt' && (code.startsWith('530') || code.startsWith('53')));
           if (!isCargo) return false;
         } else if (selectedCarrier === 'jt_express') {
           const code = (item.trackingCode || '').trim().toUpperCase();
           const isExpress = item.carrier === 'jt' && !code.startsWith('530') && !code.startsWith('53');
           if (!isExpress) return false;
+        } else if (selectedCarrier === 'jt') {
+          const code = (item.trackingCode || '').trim().toUpperCase();
+          const isJT = item.carrier === 'jt' || item.carrier === 'jt_cargo' || code.startsWith('8') || code.startsWith('53');
+          if (!isJT) return false;
         } else if (selectedCarrier === 'other') {
-          if (['spx', 'jt', 'ghn', 'viettelpost', 'ninjavan'].includes(item.carrier)) return false;
+          if (['spx', 'jt', 'jt_cargo', 'ghn', 'viettelpost', 'ninjavan', 'best', 'tiktok', 'lex', 'ghtk'].includes(item.carrier)) return false;
         } else if (item.carrier !== selectedCarrier) {
           return false;
         }

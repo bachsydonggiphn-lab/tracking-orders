@@ -117,11 +117,11 @@ export const BatchControls: React.FC<BatchControlsProps> = ({
       if (o.carrier === 'spx') {
         stats.spx.total++;
         if (isUnscanned) stats.spx.unscanned++;
-      } else if (o.carrier === 'jt') {
+      } else if (o.carrier === 'jt' || o.carrier === 'jt_cargo') {
         stats.jt.total++;
         if (isUnscanned) stats.jt.unscanned++;
         const clean = (o.trackingCode || '').trim().toUpperCase();
-        if (clean.startsWith('530') || clean.startsWith('53')) {
+        if (o.carrier === 'jt_cargo' || clean.startsWith('530') || clean.startsWith('53')) {
           stats.jt.cargo++;
         } else {
           stats.jt.express++;

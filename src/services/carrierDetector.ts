@@ -30,9 +30,20 @@ export const CARRIERS: Record<CarrierId, CarrierConfig> = {
     logoColor: '#E60012',
     badgeBg: 'bg-rose-50 text-rose-700 border-rose-200',
     badgeText: 'text-rose-600',
-    prefixHints: ['832', '86', '84', '83', '530', '53', 'JT', 'JTE', 'JTT'],
+    prefixHints: ['832', '86', '84', '83', 'JT', 'JTE', 'JTT'],
     trackingUrlPattern: 'https://jtexpress.vn/vi/tracking?type=track&billcode={CODE}',
     website: 'https://jtexpress.vn/'
+  },
+  jt_cargo: {
+    id: 'jt_cargo',
+    name: 'J&T (Cargo)',
+    shortName: 'J&T (Cargo)',
+    logoColor: '#D97706',
+    badgeBg: 'bg-amber-50 text-amber-800 border-amber-300',
+    badgeText: 'text-amber-700',
+    prefixHints: ['530', '53'],
+    trackingUrlPattern: 'https://office.jtcargo.com.vn/trade/orderQuery?bills={CODE}',
+    website: 'https://jtcargo.com.vn/'
   },
   viettelpost: {
     id: 'viettelpost',
@@ -41,7 +52,7 @@ export const CARRIERS: Record<CarrierId, CarrierConfig> = {
     logoColor: '#EE0033',
     badgeBg: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     badgeText: 'text-emerald-600',
-    prefixHints: ['VT', 'VTP', '10', '11', '12', '13', '14', '15'],
+    prefixHints: ['VT', 'VTP', 'SHOPEEVTP', '10', '11', '12', '13', '14', '15'],
     trackingUrlPattern: 'https://viettelpost.com.vn/tra-cuu-hanh-trinh-don/?order_number={CODE}',
     website: 'https://viettelpost.com.vn/'
   },
@@ -78,6 +89,39 @@ export const CARRIERS: Record<CarrierId, CarrierConfig> = {
     trackingUrlPattern: 'https://best-inc.vn/track?bills={CODE}',
     website: 'https://best-inc.vn/'
   },
+  tiktok: {
+    id: 'tiktok',
+    name: 'TikTok Shop Logistics',
+    shortName: 'TikTok Shop',
+    logoColor: '#000000',
+    badgeBg: 'bg-zinc-100 text-zinc-900 border-zinc-300',
+    badgeText: 'text-zinc-900',
+    prefixHints: ['TTVN', 'TT'],
+    trackingUrlPattern: 'https://seller-vn.tiktok.com/',
+    website: 'https://seller-vn.tiktok.com/'
+  },
+  lex: {
+    id: 'lex',
+    name: 'Lazada Express (LEX)',
+    shortName: 'Lazada LEX',
+    logoColor: '#0F146D',
+    badgeBg: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    badgeText: 'text-indigo-600',
+    prefixHints: ['LEX', 'LEXTH', 'LEXVN'],
+    trackingUrlPattern: 'https://tracker.lel.asia/tracker?tracking_number={CODE}',
+    website: 'https://tracker.lel.asia/'
+  },
+  ghtk: {
+    id: 'ghtk',
+    name: 'Giao Hàng Tiết Kiệm (GHTK)',
+    shortName: 'GHTK',
+    logoColor: '#006A32',
+    badgeBg: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+    badgeText: 'text-emerald-700',
+    prefixHints: ['S', 'GHTK'],
+    trackingUrlPattern: 'https://i.ghtk.vn/{CODE}',
+    website: 'https://i.ghtk.vn/'
+  },
   unknown: {
     id: 'unknown',
     name: 'Chưa xác định hãng',
@@ -99,25 +143,60 @@ export function detectCarrier(code: string, channelHint: string = ''): CarrierId
   const cleanChannel = (channelHint || '').trim().toUpperCase();
 
   // 1. PRIMARY RULE: Direct Tracking Number Prefix / Format Check (Highest Priority & Absolute Truth)
-  // Shopee Express (SPX): Starts with SPXVN, SPX, VNSPX, SPE, VNSP
+  // Shopee Express (SPX): Starts with SPXVN, SPX, VNSPX, SPE, VNSP, or Shopee Crossborder VN2...
   if (
     cleanCode.startsWith('SPXVN') || 
     cleanCode.startsWith('SPX') || 
     cleanCode.startsWith('VNSPX') || 
     cleanCode.startsWith('SPE') ||
-    cleanCode.startsWith('VNSP')
+    cleanCode.startsWith('VNSP') ||
+    (cleanCode.startsWith('VN2') && cleanCode.length >= 13 && /^[A-Z0-9]+$/.test(cleanCode) && !cleanCode.endsWith('VN'))
   ) {
     return 'spx';
   }
 
-  // Giao Hàng Nhanh (GHN): Starts with VNGH, GY, G8, GHN, NL_, or 8-char alphanumeric starting with G (e.g. GYY9RXX4, GYY9R4TE)
+  // J&T Cargo: Starts with 530 or (53 + 11-13 digits)
+  if (
+    cleanCode.startsWith('530') || 
+    ((cleanCode.startsWith('53')) && cleanCode.length >= 11 && cleanCode.length <= 13 && /^\d+$/.test(cleanCode))
+  ) {
+    return 'jt_cargo';
+  }
+
+  // J&T Express: Starts with 8, JT, JTE, JTT, JNT
+  if (
+    cleanCode.startsWith('8') ||
+    cleanCode.startsWith('JT') || 
+    cleanCode.startsWith('JTE') || 
+    cleanCode.startsWith('JTT') || 
+    cleanCode.startsWith('JNT')
+  ) {
+    return 'jt';
+  }
+
+  // TikTok Shop Logistics: Starts with TTVN or TT (long)
+  if (cleanCode.startsWith('TTVN') || (cleanCode.startsWith('TT') && cleanCode.length >= 12)) {
+    return 'tiktok';
+  }
+
+  // Lazada Express (LEX): Starts with LEX, LEXTH, LEXVN
+  if (cleanCode.startsWith('LEX') || cleanCode.startsWith('LEXTH') || cleanCode.startsWith('LEXVN')) {
+    return 'lex';
+  }
+
+  // Giao Hàng Tiết Kiệm (GHTK): Starts with GHTK or S + 8-10 digits
+  if (cleanCode.startsWith('GHTK') || (cleanCode.startsWith('S') && cleanCode.length >= 9 && cleanCode.length <= 11 && /^\d+$/.test(cleanCode.slice(1)))) {
+    return 'ghtk';
+  }
+
+  // Giao Hàng Nhanh (GHN): Starts with VNGH, GY, G8, GHN, NL_, or 8-char alphanumeric
   if (
     cleanCode.startsWith('VNGH') ||
     cleanCode.startsWith('GY') || 
     cleanCode.startsWith('G8') || 
     cleanCode.startsWith('GHN') ||
     cleanCode.startsWith('NL_') ||
-    (cleanCode.length === 8 && /^[A-Z0-9]{8}$/.test(cleanCode) && cleanCode.startsWith('G'))
+    (cleanCode.length === 8 && /^[A-Z0-9]{8}$/.test(cleanCode) && (cleanCode.startsWith('G') || cleanChannel.includes('GHN')))
   ) {
     return 'ghn';
   }
@@ -158,25 +237,10 @@ export function detectCarrier(code: string, channelHint: string = ''): CarrierId
     return 'best';
   }
 
-  // J&T Express & J&T Cargo:
-  // Quy tắc chuẩn: Miễn là mã vận đơn mang đầu số "8" thì nó là đơn J&T Express
-  // J&T Cargo: bắt đầu bằng 530 hoặc 53 + 10 chữ số
-  // Mã chữ: JT, JTE, JTT, JNT
-  if (
-    cleanCode.startsWith('8') ||
-    cleanCode.startsWith('JT') || 
-    cleanCode.startsWith('JTE') || 
-    cleanCode.startsWith('JTT') || 
-    cleanCode.startsWith('JNT') || 
-    cleanCode.startsWith('530') || 
-    ((cleanCode.startsWith('53')) && cleanCode.length >= 11 && cleanCode.length <= 13 && /^\d+$/.test(cleanCode))
-  ) {
-    return 'jt';
-  }
-
   // 2. Fallback heuristics based on pure numeric code length
   if (/^\d{12}$/.test(cleanCode)) {
-    // 12 numeric digits default = J&T Express
+    if (cleanCode.startsWith('53')) return 'jt_cargo';
+    if (cleanCode.startsWith('61') || cleanCode.startsWith('81')) return 'best';
     return 'jt';
   }
 
@@ -186,6 +250,18 @@ export function detectCarrier(code: string, channelHint: string = ''): CarrierId
 
   // 3. SECONDARY RULE: Check explicit channel hints only if tracking code did not match standard carrier formats
   if (cleanChannel) {
+    if (cleanChannel.includes('CARGO')) {
+      return 'jt_cargo';
+    }
+    if (cleanChannel.includes('LEX') || cleanChannel.includes('LAZADA')) {
+      return 'lex';
+    }
+    if (cleanChannel.includes('TIKTOK') || cleanChannel.includes('TTVN')) {
+      return 'tiktok';
+    }
+    if (cleanChannel.includes('GHTK') || cleanChannel.includes('TIET KIEM')) {
+      return 'ghtk';
+    }
     if (cleanChannel.includes('GHN') || cleanChannel.includes('GIAOHANGNHANH') || cleanChannel.includes('GIAO HANG NHANH')) {
       return 'ghn';
     }
@@ -195,8 +271,7 @@ export function detectCarrier(code: string, channelHint: string = ''): CarrierId
     if (
       cleanChannel.includes('J&T') || 
       cleanChannel.includes('JNT') || 
-      cleanChannel.includes('JTEXPRESS') ||
-      cleanChannel.includes('J&T CARGO')
+      cleanChannel.includes('JTEXPRESS')
     ) {
       return 'jt';
     }
@@ -228,6 +303,9 @@ export function getDirectTrackingUrl(carrier: CarrierId, code: string, phone: st
   }
   if (carrier === 'spx' || cleanCode.startsWith('SPXVN') || cleanCode.startsWith('SPX')) {
     return `https://spx.vn/track?${encodeURIComponent(cleanCode)}`;
+  }
+  if (carrier === 'jt_cargo' || cleanCode.startsWith('530') || (cleanCode.startsWith('53') && cleanCode.length >= 11)) {
+    return `https://office.jtcargo.com.vn/trade/orderQuery?bills=${encodeURIComponent(cleanCode)}`;
   }
   let url = config.trackingUrlPattern.replace('{CODE}', encodeURIComponent(cleanCode));
   if (carrier === 'jt') {

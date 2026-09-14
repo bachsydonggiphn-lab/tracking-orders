@@ -546,9 +546,16 @@ export const OrderTable: React.FC<OrderTableProps> = ({
 
                   {/* Carrier */}
                   <td className="py-3 px-3.5">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold border font-mono ${carrier.badgeBg}`}>
-                      {carrier.shortName}
-                    </span>
+                    {(() => {
+                      const isCargo = order.carrier === 'jt_cargo' || (order.carrier === 'jt' && (order.trackingCode?.startsWith('530') || (order.trackingCode?.startsWith('53') && order.trackingCode?.length >= 11)));
+                      const badgeText = isCargo ? 'J&T (Cargo)' : carrier.shortName;
+                      const badgeBg = isCargo ? 'bg-amber-50 text-amber-800 border-amber-300' : carrier.badgeBg;
+                      return (
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold border font-mono ${badgeBg}`}>
+                          {badgeText}
+                        </span>
+                      );
+                    })()}
                   </td>
 
                   {/* Status Badge */}

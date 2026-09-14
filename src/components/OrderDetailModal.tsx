@@ -122,6 +122,9 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
     if (order.carrier === 'spx' || order.trackingCode.startsWith('SPXVN') || order.trackingCode.startsWith('SPX')) {
       return `https://spx.vn/track?${encodeURIComponent(order.trackingCode.trim())}`;
     }
+    if (order.carrier === 'jt_cargo' || order.trackingCode.startsWith('530') || (order.trackingCode.startsWith('53') && order.trackingCode.length >= 11)) {
+      return `https://office.jtcargo.com.vn/trade/orderQuery?bills=${encodeURIComponent(order.trackingCode.trim())}`;
+    }
     if (order.carrier === 'jt') {
       const p = phoneSuffix || '8836';
       return `https://jtexpress.vn/vi/tracking?type=track&billcode=${encodeURIComponent(order.trackingCode)}&cellphone=${encodeURIComponent(p)}`;

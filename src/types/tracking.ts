@@ -1,4 +1,4 @@
-export type CarrierId = 'ghn' | 'spx' | 'jt' | 'viettelpost' | 'ninjavan' | 'vnpost' | 'best' | 'unknown';
+export type CarrierId = 'ghn' | 'spx' | 'jt' | 'jt_cargo' | 'viettelpost' | 'ninjavan' | 'vnpost' | 'best' | 'tiktok' | 'lex' | 'ghtk' | 'unknown';
 
 export type TrackingStatusCategory = 
   | 'scanned'       // Đã scan / Đã lấy hàng / Đang xử lý tại kho

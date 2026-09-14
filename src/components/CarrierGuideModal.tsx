@@ -23,8 +23,13 @@ export const CarrierGuideModal: React.FC<CarrierGuideModalProps> = ({ isOpen, on
     },
     {
       carrier: CARRIERS.jt,
-      rule: 'Mã 12 chữ số: đầu số 832... (Sàn TMĐT), 862... (8623, 8620, 8621, 8622 kho WMS), 84..., 530... (Cargo) hoặc JT... (Ví dụ: 862314159554, 832...)',
-      description: 'Hệ thống tự động thử cả đuôi 8036 và 8836 để mở khóa cổng J&T Express: https://jtexpress.vn/vi/tracking?type=track&billcode=862314159554&cellphone=8836'
+      rule: 'Mã 12 chữ số đầu 8: 8623..., 84..., 83..., JT... (Ví dụ: 862314159554)',
+      description: 'Hệ thống tự động tra cứu Live API và mở khóa cổng J&T Express (kèm hỗ trợ 4 số cuối SĐT).'
+    },
+    {
+      carrier: CARRIERS.jt_cargo,
+      rule: 'Mã 12 chữ số đầu 53: 530..., 53... (Ví dụ: 530409240209)',
+      description: 'Hệ thống tự động tra cứu qua Cổng J&T Cargo chuyên tuyến hàng nặng kiện lớn: https://office.jtcargo.com.vn/'
     },
     {
       carrier: CARRIERS.viettelpost,
