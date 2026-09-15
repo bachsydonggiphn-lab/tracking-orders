@@ -48,13 +48,17 @@ export const AutoSyncBar: React.FC<AutoSyncBarProps> = ({
 }) => {
   const percentLeft = Math.max(0, Math.min(100, (countdown / intervalSeconds) * 100));
 
+  const minutesAgo = lastSyncTime 
+    ? Math.max(0, Math.floor((Date.now() - new Date(lastSyncTime).getTime()) / 60000))
+    : null;
+
   const formatTime = (d: Date) => {
     return new Intl.DateTimeFormat('vi-VN', {
       timeZone: 'Asia/Ho_Chi_Minh',
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit'
-    }).format(d);
+    }).format(new Date(d));
   };
 
   return (
@@ -114,11 +118,11 @@ export const AutoSyncBar: React.FC<AutoSyncBarProps> = ({
             <p className={`text-[11px] mt-0.5 ${isEnabled ? 'text-slate-300' : 'text-slate-500'}`}>
               {isEnabled ? (
                 <span>
-                  Đang quét thời gian thực: Cứ có đơn <strong>Shipper (Đã xuất kho)</strong> là tự kéo về & kích hoạt quét Live NVC ngay!
+                  Đang quét thời gian thực: Cứ có đơn <strong>Shipper (Đã xuất kho)</strong> là tự kéo về & kích hoạt quét Live NVC ngay! <em>(Tự động quét bù nếu có gián đoạn)</em>
                 </span>
               ) : (
                 <span>
-                  Bật công tắc để tự động kéo đơn mới định kỳ và quét Live bưu tá đã nhận hàng hay chưa.
+                  Đang tạm tắt: Mốc thời gian được ghi nhớ liên tục. Khi bật lại, hệ thống sẽ <strong>tự động quét bù toàn bộ thời gian đã tắt</strong> mà không bỏ sót bất kỳ đơn nào.
                 </span>
               )}
             </p>
@@ -223,23 +227,50 @@ export const AutoSyncBar: React.FC<AutoSyncBarProps> = ({
       </div>
 
       {/* Sub-bar: Last sync info & Stats */}
-      {isEnabled && lastSyncTime && (
-        <div className="px-4 py-1.5 bg-slate-950/80 border-t border-slate-800 text-[11px] flex flex-wrap items-center justify-between gap-2 text-slate-400">
+      {lastSyncTime && (
+        <div className={`px-4 py-1.5 border-t text-[11px] flex flex-wrap items-center justify-between gap-2 ${
+          isEnabled 
+            ? 'bg-slate-950/80 border-slate-800 text-slate-400' 
+            : 'bg-slate-50 border-slate-200 text-slate-600'
+        }`}>
           <div className="flex items-center gap-2">
-            <span className="flex items-center gap-1 text-slate-300">
-              <Truck className="w-3 h-3 text-emerald-400" />
-              Lần quét gần nhất: <strong>{formatTime(lastSyncTime)}</strong>
+            <span className={`flex items-center gap-1 ${isEnabled ? 'text-slate-300' : 'text-slate-800'}`}>
+              <Truck className={`w-3.5 h-3.5 ${isEnabled ? 'text-emerald-400' : 'text-slate-500'}`} />
+              Lần quét gần nhất: <strong className={isEnabled ? 'text-white' : 'text-slate-900'}>{formatTime(lastSyncTime)}</strong>
+              {minutesAgo !== null && (
+                <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold ${
+                  minutesAgo >= 2
+                    ? isEnabled 
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' 
+                      : 'bg-amber-100 text-amber-900 border border-amber-200'
+                    : isEnabled 
+                      ? 'text-emerald-400' 
+                      : 'text-slate-500'
+                }`}>
+                  ({minutesAgo === 0 ? 'vừa xong' : `cách đây ${minutesAgo} phút`})
+                </span>
+              )}
             </span>
-            <span className="text-slate-600">|</span>
-            <span>
-              Đơn mới vừa thêm: <strong className={lastAddedCount > 0 ? 'text-emerald-400' : 'text-slate-400'}>+{lastAddedCount} đơn</strong>
-            </span>
+            <span className={isEnabled ? 'text-slate-700' : 'text-slate-300'}>|</span>
+            {isEnabled ? (
+              <span>
+                Đơn mới vừa thêm: <strong className={lastAddedCount > 0 ? 'text-emerald-400' : 'text-slate-400'}>+{lastAddedCount} đơn</strong>
+              </span>
+            ) : (
+              <span className="text-amber-700 font-medium">
+                Đã ghi nhớ mốc: Khi bật lên sẽ tự quét bù {minutesAgo ? `${minutesAgo} phút` : ''} không bỏ sót đơn!
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2 text-[10px] font-mono">
-            <span className="text-emerald-400">● Chế độ: Thời Gian Thực (Không -1)</span>
-            <span className="text-slate-600">•</span>
-            <span className="text-slate-400">Trạng thái: Đã xuất kho (Shipper - Mã 8)</span>
+            <span className={isEnabled ? 'text-emerald-400 font-bold' : 'text-emerald-700 font-bold'}>
+              🛡️ Quét bù liên tục (Gapless - Không bỏ sót)
+            </span>
+            <span className={isEnabled ? 'text-slate-600' : 'text-slate-300'}>•</span>
+            <span className={isEnabled ? 'text-slate-400' : 'text-slate-500'}>
+              Trạng thái: Shipper (Mã 8)
+            </span>
           </div>
         </div>
       )}

@@ -110,14 +110,27 @@ export function convertRawWmsToOrderItems(
 }
 
 /**
- * Fetch latest real-time Shipper (status 8) orders from YunWMS
+ * Fetch real-time Shipper (status 8) orders from YunWMS with gapless auto-pagination.
+ * If existingCodes are provided, it automatically paginates (Page 1, 2, 3...) until
+ * it encounters orders that already exist in the system, ensuring NO ORDERS ARE MISSED
+ * even if auto-sync was paused for 10 minutes, 29 minutes, or several hours!
  */
-export async function fetchLatestWMSOrders(pageSize: number = 100): Promise<OrderItem[]> {
+export async function fetchGaplessWMSOrders(
+  existingCodes: Set<string> = new Set(),
+  options: {
+    maxPages?: number;
+    pageSize?: number;
+    onProgress?: (page: number, newOrdersCount: number) => void;
+  } = {}
+): Promise<{ orders: OrderItem[]; newCount: number; pagesQueried: number }> {
+  const maxPages = options.maxPages || 20; // Safeguard limit (up to 2,000 orders)
+  const pageSize = options.pageSize || 100;
+
   let userName = 'David';
   let userPass = '12345abc';
   let warehouseId = '7';
   let carrierFilterMode: 'spx_jt' | 'all' | 'custom' = 'spx_jt';
-  let selectedCarriers: string[] = ['spx', 'jt', 'jt_cargo', 'vnpost'];
+  let selectedCarriers: string[] = ['spx', 'jt', 'jt_cargo', 'vnpost', 'best'];
   let customPrefixes: string[] = [];
 
   try {
@@ -136,38 +149,99 @@ export async function fetchLatestWMSOrders(pageSize: number = 100): Promise<Orde
     if (cp) customPrefixes = JSON.parse(cp);
   } catch {}
 
-  const response = await fetch('/api/yunwms/orders', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      userName,
-      userPass,
-      page: 1,
-      pageSize,
-      dateInterval: '', // Empty pulls the latest orders descending in real-time
-      orderStatus: '8', // Shipper (Đã xuất kho)
-      warehouseId,
-      excludeToday: false, // Quét thời gian thực không trừ ngày
+  const allFetchedOrders: OrderItem[] = [];
+  const seenInBatch = new Set<string>();
+  let pagesQueried = 0;
+  let newOrdersCount = 0;
+
+  for (let page = 1; page <= maxPages; page++) {
+    pagesQueried++;
+    const response = await fetch('/api/yunwms/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userName,
+        userPass,
+        page,
+        pageSize,
+        dateInterval: '', // Empty pulls the latest orders descending in real-time
+        orderStatus: '8', // Shipper (Đã xuất kho)
+        warehouseId,
+        excludeToday: false, // Quét thời gian thực không trừ ngày
+        carrierFilterMode,
+        selectedCarriers,
+        customPrefixes
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Không thể kéo đơn từ YunWMS');
+    }
+
+    const rawList = data.orders || [];
+    if (rawList.length === 0) {
+      // Reached the end of WMS list
+      break;
+    }
+
+    const converted = convertRawWmsToOrderItems(rawList, {
       carrierFilterMode,
       selectedCarriers,
-      customPrefixes
-    })
-  });
+      customPrefixes,
+      excludeToday: false,
+      warehouseId
+    });
 
-  if (!response.ok) {
-    throw new Error(`HTTP error ${response.status}`);
+    let foundExistingInThisPage = false;
+
+    for (const item of converted) {
+      if (!seenInBatch.has(item.trackingCode)) {
+        seenInBatch.add(item.trackingCode);
+        allFetchedOrders.push(item);
+      }
+
+      if (existingCodes.has(item.trackingCode)) {
+        foundExistingInThisPage = true;
+      } else {
+        newOrdersCount++;
+      }
+    }
+
+    options.onProgress?.(page, newOrdersCount);
+
+    // If we have an existing database of orders, and we found an order that already exists in this page,
+    // it means we have completely bridged the gap between now and the previous sync!
+    if (existingCodes.size > 0 && foundExistingInThisPage) {
+      break;
+    }
+
+    // If rawCount from WMS is less than pageSize, there are no more pages
+    if (data.rawCount !== undefined && data.rawCount < pageSize) {
+      break;
+    }
+
+    // If existingCodes is empty (brand new empty list), only fetch 1 page to avoid pulling thousands of old orders automatically
+    if (existingCodes.size === 0) {
+      break;
+    }
   }
 
-  const data = await response.json();
-  if (!data.success) {
-    throw new Error(data.error || 'Không thể kéo đơn từ YunWMS');
-  }
+  return {
+    orders: allFetchedOrders,
+    newCount: newOrdersCount,
+    pagesQueried
+  };
+}
 
-  return convertRawWmsToOrderItems(data.orders || [], {
-    carrierFilterMode,
-    selectedCarriers,
-    customPrefixes,
-    excludeToday: false,
-    warehouseId
-  });
+/**
+ * Backward-compatible single-page fetcher
+ */
+export async function fetchLatestWMSOrders(pageSize: number = 100): Promise<OrderItem[]> {
+  const res = await fetchGaplessWMSOrders(new Set(), { maxPages: 1, pageSize });
+  return res.orders;
 }

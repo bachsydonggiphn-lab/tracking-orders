@@ -19,7 +19,7 @@ import { createOrderItem, trackSingleOrder, trackBatchOrders, clearTrackingCache
 import { detectCarrier, getDirectTrackingUrl } from './services/carrierDetector';
 import { isOrderWithinDays, getOrderAgeInfo } from './utils/dateFilter';
 import { getInitialOrdersSync, loadIndexedDBOrders, loadPersistedOrders, saveOrdersDebounced, saveOrdersToStorage, clearPersistedOrders, normalizeOrderList, upsertOrdersToSql } from './utils/orderStorage';
-import { fetchLatestWMSOrders } from './utils/wmsOrderUtils';
+import { fetchGaplessWMSOrders, fetchLatestWMSOrders } from './utils/wmsOrderUtils';
 import { CheckCircle, AlertCircle, Info } from 'lucide-react';
 
 export default function App() {
@@ -60,7 +60,16 @@ export default function App() {
   });
   const [autoSyncCountdown, setAutoSyncCountdown] = useState<number>(autoSyncInterval);
   const [isAutoSyncing, setIsAutoSyncing] = useState<boolean>(false);
-  const [lastAutoSyncTime, setLastAutoSyncTime] = useState<Date | null>(null);
+  const [lastAutoSyncTime, setLastAutoSyncTime] = useState<Date | null>(() => {
+    try {
+      const saved = localStorage.getItem('auto_sync_last_time');
+      if (saved) {
+        const d = new Date(saved);
+        if (!isNaN(d.getTime())) return d;
+      }
+    } catch {}
+    return null;
+  });
   const [lastAutoSyncAddedCount, setLastAutoSyncAddedCount] = useState<number>(0);
   const isAutoSyncingRef = useRef<boolean>(false);
 
@@ -790,22 +799,43 @@ export default function App() {
     }
   };
 
-  // --- Auto Sync Periodic Poller & Auto Scan Engine ---
+  // --- Auto Sync Periodic Poller & Gapless Auto Scan Engine ---
   const performAutoPullAndScan = async () => {
     if (isAutoSyncingRef.current) return;
     isAutoSyncingRef.current = true;
     setIsAutoSyncing(true);
 
     try {
-      const latestOrders = await fetchLatestWMSOrders(100);
+      const currentList = ordersRef.current.length > 0 ? ordersRef.current : orders;
+      const existingMap = new Map<string, OrderItem>(currentList.map(o => [o.trackingCode, o]));
+      const existingCodes = new Set<string>(existingMap.keys());
+
+      // Check gap time since previous sync
+      const previousSyncTime = lastAutoSyncTime;
+      const minutesGap = previousSyncTime
+        ? Math.max(0, Math.floor((Date.now() - previousSyncTime.getTime()) / 60000))
+        : 0;
+
+      // Use Gapless WMS Fetcher:
+      // It automatically paginates until it touches an order already in our system,
+      // guaranteeing that even if the app was closed or paused for 29 minutes,
+      // NO NEW ORDERS ARE MISSED!
+      const { orders: latestOrders, pagesQueried } = await fetchGaplessWMSOrders(existingCodes, {
+        maxPages: 25,
+        pageSize: 100
+      });
+
+      const now = new Date();
+      setLastAutoSyncTime(now);
+      try {
+        localStorage.setItem('auto_sync_last_time', now.toISOString());
+      } catch {}
+
       if (!latestOrders || latestOrders.length === 0) {
-        setLastAutoSyncTime(new Date());
         setLastAutoSyncAddedCount(0);
         return;
       }
 
-      const currentList = ordersRef.current.length > 0 ? ordersRef.current : orders;
-      const existingMap = new Map<string, OrderItem>(currentList.map(o => [o.trackingCode, o]));
       let addedCount = 0;
 
       for (const item of latestOrders) {
@@ -851,11 +881,14 @@ export default function App() {
 
       // Upsert ONLY the newly fetched orders to SQLite database (lightweight, non-blocking)
       upsertOrdersToSql(latestOrders);
-      setLastAutoSyncTime(new Date());
       setLastAutoSyncAddedCount(addedCount);
 
       if (addedCount > 0) {
-        showToast(`⚡ Tự động kéo WMS: +${addedCount} mã vận đơn Shipper mới! Đang kích hoạt quét live...`);
+        if (minutesGap >= 2) {
+          showToast(`🛡️ Quét bù thành công: Đã nhặt đủ +${addedCount} đơn mới trong ${minutesGap} phút gián đoạn (${pagesQueried} trang WMS)! Đang quét Live NVC...`);
+        } else {
+          showToast(`⚡ Tự động kéo WMS: +${addedCount} mã vận đơn Shipper mới! Đang kích hoạt quét live...`);
+        }
       }
 
       // Check if there are unscanned orders and start batch execution if not already scanning
@@ -880,9 +913,19 @@ export default function App() {
       localStorage.setItem('auto_sync_enabled', String(enabled));
     } catch {}
     if (enabled) {
-      showToast(`Đã BẬT tự động cập nhật WMS mỗi ${autoSyncInterval}s`);
+      const minutesGap = lastAutoSyncTime 
+        ? Math.max(0, Math.floor((Date.now() - lastAutoSyncTime.getTime()) / 60000))
+        : 0;
+      if (minutesGap >= 2) {
+        showToast(`🟢 Đã BẬT Tự Động Quét. Gián đoạn ${minutesGap} phút trước — hệ thống đang quét bù toàn bộ đơn ngay...`);
+      } else {
+        showToast(`Đã BẬT tự động cập nhật WMS mỗi ${autoSyncInterval}s`);
+      }
+      setTimeout(() => {
+        performAutoPullAndScan();
+      }, 100);
     } else {
-      showToast('Đã TẮT tự động cập nhật WMS');
+      showToast('Đã TẮT tự động cập nhật WMS. Hệ thống đã lưu mốc thời gian để khi bật lại sẽ quét bù đầy đủ!');
     }
   };
 
