@@ -202,10 +202,15 @@ export default function App() {
           const code = (item.trackingCode || '').trim().toUpperCase();
           const isVnpost = item.carrier === 'vnpost' || code.startsWith('EMS') || code.startsWith('VNPOST') || /^[A-Z]{2}\d{8,11}VN$/i.test(code);
           if (!isVnpost) return false;
+        } else if (selectedCarrier === 'best') {
+          const code = (item.trackingCode || '').trim().toUpperCase();
+          const isBest = item.carrier === 'best' || code.startsWith('BEST') || ((code.startsWith('61') || code.startsWith('81')) && code.length === 12 && /^\d+$/.test(code));
+          if (!isBest) return false;
         } else if (selectedCarrier === 'other') {
           const code = (item.trackingCode || '').trim().toUpperCase();
           const isVnpost = item.carrier === 'vnpost' || code.startsWith('EMS') || code.startsWith('VNPOST') || /^[A-Z]{2}\d{8,11}VN$/i.test(code);
-          if (isVnpost || ['spx', 'jt', 'jt_cargo', 'ghn', 'viettelpost', 'ninjavan', 'best', 'tiktok', 'lex', 'ghtk'].includes(item.carrier)) return false;
+          const isBest = item.carrier === 'best' || code.startsWith('BEST') || ((code.startsWith('61') || code.startsWith('81')) && code.length === 12 && /^\d+$/.test(code));
+          if (isVnpost || isBest || ['spx', 'jt', 'jt_cargo', 'ghn', 'viettelpost', 'ninjavan', 'tiktok', 'lex', 'ghtk'].includes(item.carrier)) return false;
         } else if (item.carrier !== selectedCarrier) {
           return false;
         }
@@ -715,7 +720,7 @@ export default function App() {
   const handleSelectOrder = (order: OrderItem) => {
     setSelectedOrder(order);
     // Automatically trigger fresh live check in background for supported carriers
-    if (order.carrier === 'ghn' || order.carrier === 'jt' || order.carrier === 'spx' || order.carrier === 'vnpost') {
+    if (order.carrier === 'ghn' || order.carrier === 'jt' || order.carrier === 'spx' || order.carrier === 'vnpost' || order.carrier === 'best') {
       handleRefreshSingleOrder(order);
     }
   };

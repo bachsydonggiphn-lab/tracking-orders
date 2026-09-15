@@ -802,6 +802,53 @@ export async function trackSingleOrder(
     }
   }
 
+  // 6. Best Express tracking
+  if (
+    carrier === 'best' ||
+    upperCode.startsWith('BEST') ||
+    ((upperCode.startsWith('61') || upperCode.startsWith('81')) && upperCode.length === 12 && /^\d+$/.test(upperCode))
+  ) {
+    try {
+      const apiRes = await safeFetchApi('/api/track/best', { orderCode: cleanCode, force: forceRefresh });
+
+      if (apiRes.success && apiRes.data) {
+        const liveTimeline = apiRes.data.timeline || [];
+        const classified = classifyLogisticsStatus(apiRes.data.rawStatusText || '', liveTimeline, apiRes.data.statusCategory as TrackingStatusCategory);
+        const liveData = {
+          carrier: 'best' as CarrierId,
+          statusCategory: classified.statusCategory,
+          rawStatusText: jsonSafeText(apiRes.data.rawStatusText, 'Đang vận chuyển'),
+          statusDetail: jsonSafeText(apiRes.data.statusDetail, ''),
+          scannedAt: apiRes.data.scannedAt || classified.scannedAt,
+          updatedAt: apiRes.data.updatedAt || (liveTimeline[0]?.time),
+          timeline: liveTimeline,
+          error: undefined
+        };
+        trackingCache.set(cacheKey, liveData);
+        return liveData;
+      } else {
+        const errDetail = apiRes.error || 'BEST Express: Không tìm thấy dữ liệu vận đơn';
+        return {
+          carrier: 'best' as CarrierId,
+          statusCategory: 'not_scanned' as TrackingStatusCategory,
+          rawStatusText: 'Chờ BEST Express lấy hàng (Chưa scan)',
+          statusDetail: errDetail,
+          timeline: [],
+          error: undefined
+        };
+      }
+    } catch (err: any) {
+      return {
+        carrier: 'best' as CarrierId,
+        statusCategory: 'not_scanned',
+        rawStatusText: 'Chờ BEST Express lấy hàng (Chưa scan)',
+        statusDetail: 'Hệ thống đang kết nối lại với cổng BEST Express...',
+        timeline: [],
+        error: undefined
+      };
+    }
+  }
+
   // Unsupported or unknown carrier
   return {
     carrier,

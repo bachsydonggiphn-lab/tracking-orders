@@ -1748,6 +1748,268 @@ async function fetchVNPostBatchLive(
 }
 
 // ----------------------------------------------------
+// BEST Express Integration Service
+// ----------------------------------------------------
+
+function mapBestStatus(statusTypeCode?: string, rawRemark?: string) {
+  const st = (statusTypeCode || '').trim();
+  const rm = (rawRemark || '').toLowerCase();
+
+  // 1. Returned / Hoàn hàng
+  if (
+    st === 'Returnning' ||
+    st === 'ReturnedSigned' ||
+    rm.includes('hoàn hàng') ||
+    rm.includes('chuyển hoàn') ||
+    rm.includes('trả hàng') ||
+    rm.includes('đang hoàn')
+  ) {
+    return {
+      category: 'returned',
+      label: rawRemark || (st === 'ReturnedSigned' ? 'Đã chuyển hoàn thành công' : 'Đang chuyển hoàn'),
+      isScanned: true
+    };
+  }
+
+  // 2. Delivered / Giao thành công
+  if (
+    st === 'Sign' ||
+    rm.includes('đã ký nhận') ||
+    rm.includes('giao hàng thành công') ||
+    rm.includes('giao thành công') ||
+    rm.includes('ký nhận') ||
+    rm.includes('phát thành công')
+  ) {
+    return {
+      category: 'delivered',
+      label: rawRemark || 'Giao hàng thành công (Đã ký nhận)',
+      isScanned: true
+    };
+  }
+
+  // 3. In transit / Delivering
+  if (
+    st === 'On the Way' ||
+    st === 'Dispatch' ||
+    rm.includes('đang giao') ||
+    rm.includes('đang phát') ||
+    rm.includes('trung chuyển') ||
+    rm.includes('xuất bưu cục') ||
+    rm.includes('nhập bưu cục') ||
+    rm.includes('rời bưu cục') ||
+    rm.includes('nhập kho') ||
+    rm.includes('xuất kho') ||
+    rm.includes('đang vận chuyển')
+  ) {
+    return {
+      category: 'in_transit',
+      label: rawRemark || (st === 'Dispatch' ? 'Đang giao hàng' : 'Đang vận chuyển'),
+      isScanned: true
+    };
+  }
+
+  // 4. Scanned / Collected
+  if (
+    st === 'Collected' ||
+    rm.includes('đã lấy hàng') ||
+    rm.includes('lấy hàng thành công') ||
+    rm.includes('tiếp nhận') ||
+    rm.includes('đã nhận hàng') ||
+    rm.includes('quét mã tiếp nhận')
+  ) {
+    return {
+      category: 'scanned',
+      label: rawRemark || 'Đã lấy hàng & tiếp nhận BEST',
+      isScanned: true
+    };
+  }
+
+  // 5. Not scanned / Created / None
+  return {
+    category: 'not_scanned',
+    label: rawRemark || 'Chờ BEST Express lấy hàng (Chưa scan)',
+    isScanned: false
+  };
+}
+
+// Single BEST Express Live Tracking
+async function fetchBestLive(orderCode: string, force: boolean = false): Promise<{ success: boolean; data?: any; error?: string; carrier?: string }> {
+  const cleanCode = (orderCode || '').trim().toUpperCase();
+  const cacheKey = `best:${cleanCode}`;
+  if (!force) {
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      return { success: true, data: cached, carrier: 'best' };
+    }
+  }
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+      const res = await fetch('https://best-inc.vn/express-cc/express/expresslistinfo', {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Accept': 'application/json, text/plain, */*',
+          'Content-Type': 'application/json',
+          'X-Lan': 'VI',
+          'lang-type': 'vi-VN',
+          'X-Auth-Type': 'WEB',
+          'X-Nat': 'vi-VN',
+          'X-Timezone-Offset': '-420',
+          'Origin': 'https://best-inc.vn',
+          'Referer': 'https://best-inc.vn/track',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+        },
+        body: JSON.stringify({
+          expressIds: [cleanCode]
+        })
+      });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        if (attempt === 1) {
+          return { success: false, error: `BEST API HTTP ${res.status}`, carrier: 'best' };
+        }
+        await new Promise(r => setTimeout(r, 300));
+        continue;
+      }
+
+      const json = (await res.json()) as any;
+
+      // 1. Success response with data
+      if (json && json.success && json.data?.expressList && json.data.expressList.length > 0) {
+        const item = json.data.expressList[0];
+        const currentScanTypeCode = item.currentScanTypeCode || 'None';
+        const rawTraces = Array.isArray(item.traceDetails) ? item.traceDetails : [];
+
+        const timeline = rawTraces.map((t: any) => ({
+          time: t.acceptTime || '',
+          statusText: t.scanTypeCode || currentScanTypeCode,
+          description: (t.remark || '') + (t.sitePhone ? ` (SĐT trạm: ${t.sitePhone})` : '')
+        }));
+
+        const latestRemark = rawTraces[0]?.remark || '';
+        const mapped = mapBestStatus(currentScanTypeCode, latestRemark);
+
+        // Find pickup scan time
+        let scannedAt: string | undefined = undefined;
+        for (const t of rawTraces) {
+          const rm = (t.remark || '').toLowerCase();
+          if (
+            t.scanTypeCode === 'Collected' ||
+            rm.includes('đã lấy') ||
+            rm.includes('lấy hàng thành công') ||
+            rm.includes('tiếp nhận')
+          ) {
+            scannedAt = t.acceptTime;
+            break;
+          }
+        }
+        if (!scannedAt && (mapped.category === 'in_transit' || mapped.category === 'delivered' || mapped.category === 'returned' || mapped.category === 'scanned')) {
+          scannedAt = rawTraces[rawTraces.length - 1]?.acceptTime || rawTraces[0]?.acceptTime;
+        }
+
+        const data = {
+          carrier: 'best',
+          statusCategory: mapped.category,
+          rawStatusText: mapped.label,
+          statusDetail: latestRemark,
+          scannedAt,
+          updatedAt: rawTraces[0]?.acceptTime,
+          timeline,
+          trackUrl: `https://best-inc.vn/track?bills=${encodeURIComponent(cleanCode)}`
+        };
+
+        setInCache(cacheKey, data);
+        return { success: true, data, carrier: 'best' };
+      }
+
+      // 2. Risk / Captcha verification required
+      if (json && json.errorCode === 'risk_001') {
+        const data = {
+          carrier: 'best',
+          statusCategory: 'not_scanned',
+          rawStatusText: 'BEST Express: Cần xác minh tra cứu',
+          statusDetail: 'Hãng yêu cầu xác minh Captcha bảo vệ. Bấm liên kết để tra cứu trực tiếp.',
+          trackUrl: `https://best-inc.vn/track?bills=${encodeURIComponent(cleanCode)}`,
+          scannedAt: undefined,
+          timeline: []
+        };
+        // Short cache TTL for captcha required
+        setInCache(cacheKey, data, 60 * 1000);
+        return { success: true, data, carrier: 'best' };
+      }
+
+      // 3. Not found or other response
+      const data = {
+        carrier: 'best',
+        statusCategory: 'not_scanned',
+        rawStatusText: 'Chờ BEST Express lấy hàng (Chưa scan)',
+        statusDetail: json?.message || 'Mã vận đơn đã tạo trên hệ thống, đang chờ cập nhật trạng thái',
+        trackUrl: `https://best-inc.vn/track?bills=${encodeURIComponent(cleanCode)}`,
+        scannedAt: undefined,
+        timeline: []
+      };
+      setInCache(cacheKey, data, 60 * 1000);
+      return { success: true, data, carrier: 'best' };
+
+    } catch (err: any) {
+      if (attempt === 1) {
+        return {
+          success: true,
+          data: {
+            carrier: 'best',
+            statusCategory: 'not_scanned',
+            rawStatusText: 'Chờ BEST Express lấy hàng (Chưa scan)',
+            statusDetail: 'Đang kết nối với cổng BEST Express...',
+            trackUrl: `https://best-inc.vn/track?bills=${encodeURIComponent(cleanCode)}`,
+            scannedAt: undefined,
+            timeline: []
+          },
+          carrier: 'best'
+        };
+      }
+      await new Promise(r => setTimeout(r, 300));
+    }
+  }
+
+  return {
+    success: false,
+    error: 'Không thể kết nối cổng BEST Express',
+    carrier: 'best'
+  };
+}
+
+// BEST Express Batch Tracking
+async function fetchBestBatchLive(
+  trackingCodes: string[],
+  force: boolean = false
+): Promise<Record<string, { success: boolean; data?: any; error?: string; carrier?: string }>> {
+  const cleanCodes = Array.from(new Set(trackingCodes.map(c => (c || '').trim().toUpperCase()).filter(Boolean)));
+  if (cleanCodes.length === 0) return {};
+
+  const results: Record<string, { success: boolean; data?: any; error?: string; carrier?: string }> = {};
+
+  const CONCURRENCY = 10;
+  for (let i = 0; i < cleanCodes.length; i += CONCURRENCY) {
+    const chunk = cleanCodes.slice(i, i + CONCURRENCY);
+    await Promise.all(
+      chunk.map(async (code) => {
+        results[code] = await fetchBestLive(code, force);
+      })
+    );
+    if (i + CONCURRENCY < cleanCodes.length) {
+      await new Promise(r => setTimeout(r, 100));
+    }
+  }
+
+  return results;
+}
+
+// ----------------------------------------------------
 // YunWMS (WMS Cloud) Integration Service
 // ----------------------------------------------------
 let yunWMSSessionCookie: string | null = null;
@@ -2691,6 +2953,17 @@ async function startServer() {
     res.json(result);
   });
 
+  // Single track Best Express endpoint
+  app.post("/api/track/best", async (req, res) => {
+    const { orderCode, force } = req.body;
+    if (!orderCode) {
+      res.status(400).json({ success: false, error: "Missing orderCode" });
+      return;
+    }
+    const result = await fetchBestLive(orderCode, Boolean(force));
+    res.json(result);
+  });
+
   // Clear tracking liveCache endpoint
   app.post("/api/track/clear-cache", (req, res) => {
     liveCache.clear();
@@ -2709,10 +2982,11 @@ async function startServer() {
     const isGlobalForce = Boolean(force);
     const results: Record<string, any> = {};
 
-    // 1. Properly resolve carrier based on tracking code format first (prevents mislabelled J&T notes from breaking SPX/GHN/VNPost)
+    // 1. Properly resolve carrier based on tracking code format first (prevents mislabelled J&T notes from breaking SPX/GHN/VNPost/BEST)
     const jtExpressItems: typeof orders = [];
     const jtCargoItems: typeof orders = [];
     const vnpostItems: typeof orders = [];
+    const bestItems: typeof orders = [];
     const otherItems: typeof orders = [];
 
     for (const item of orders) {
@@ -2751,6 +3025,11 @@ async function startServer() {
         /^[ECRV][A-Z0-9]{8,11}VN$/i.test(upper)
       ) {
         resolvedCarrier = 'vnpost';
+      } else if (
+        upper.startsWith('BEST') ||
+        ((upper.startsWith('61') || upper.startsWith('81')) && upper.length === 12 && /^\d+$/.test(upper))
+      ) {
+        resolvedCarrier = 'best';
       } else if (upper.startsWith('VT') || upper.startsWith('VTP')) {
         resolvedCarrier = 'viettelpost';
       } else if (
@@ -2776,6 +3055,8 @@ async function startServer() {
         jtExpressItems.push(item);
       } else if (resolvedCarrier === 'vnpost') {
         vnpostItems.push(item);
+      } else if (resolvedCarrier === 'best') {
+        bestItems.push(item);
       } else {
         otherItems.push(item);
       }
@@ -2792,6 +3073,13 @@ async function startServer() {
     const vnpostCodes = vnpostItems.map(o => o.code);
     const vnpostResults = await fetchVNPostBatchLive(vnpostCodes, isGlobalForce);
     for (const [code, resObj] of Object.entries(vnpostResults)) {
+      results[code] = resObj;
+    }
+
+    // Process Best Express in parallel
+    const bestCodes = bestItems.map(o => o.code);
+    const bestResults = await fetchBestBatchLive(bestCodes, isGlobalForce);
+    for (const [code, resObj] of Object.entries(bestResults)) {
       results[code] = resObj;
     }
 
@@ -2846,6 +3134,13 @@ async function startServer() {
           ) {
             const vnpostRes = await fetchVNPostLive(item.code, itemForce);
             results[item.code] = vnpostRes;
+          } else if (
+            item.carrier === 'best' ||
+            upper.startsWith('BEST') ||
+            ((upper.startsWith('61') || upper.startsWith('81')) && upper.length === 12 && /^\d+$/.test(upper))
+          ) {
+            const bestRes = await fetchBestLive(item.code, itemForce);
+            results[item.code] = bestRes;
           } else {
             results[item.code] = {
               success: false,

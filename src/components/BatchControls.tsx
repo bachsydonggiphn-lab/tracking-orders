@@ -107,6 +107,7 @@ export const BatchControls: React.FC<BatchControlsProps> = ({
       viettelpost: { total: 0, unscanned: 0 },
       ninjavan: { total: 0, unscanned: 0 },
       vnpost: { total: 0, unscanned: 0 },
+      best: { total: 0, unscanned: 0 },
       other: { total: 0, unscanned: 0 }
     };
 
@@ -117,6 +118,7 @@ export const BatchControls: React.FC<BatchControlsProps> = ({
 
       const clean = (o.trackingCode || '').trim().toUpperCase();
       const isVnpostCode = o.carrier === 'vnpost' || clean.startsWith('EMS') || clean.startsWith('VNPOST') || /^[A-Z]{2}\d{8,11}VN$/i.test(clean);
+      const isBestCode = o.carrier === 'best' || clean.startsWith('BEST') || ((clean.startsWith('61') || clean.startsWith('81')) && clean.length === 12 && /^\d+$/.test(clean));
 
       if (o.carrier === 'spx') {
         stats.spx.total++;
@@ -141,6 +143,9 @@ export const BatchControls: React.FC<BatchControlsProps> = ({
       } else if (isVnpostCode) {
         stats.vnpost.total++;
         if (isUnscanned) stats.vnpost.unscanned++;
+      } else if (isBestCode) {
+        stats.best.total++;
+        if (isUnscanned) stats.best.unscanned++;
       } else {
         stats.other.total++;
         if (isUnscanned) stats.other.unscanned++;
@@ -700,6 +705,7 @@ export const BatchControls: React.FC<BatchControlsProps> = ({
             {carrierStats.viettelpost.total > 0 && <option value="viettelpost">Viettel Post ({carrierStats.viettelpost.total.toLocaleString()})</option>}
             {carrierStats.ninjavan.total > 0 && <option value="ninjavan">Ninja Van ({carrierStats.ninjavan.total.toLocaleString()})</option>}
             {carrierStats.vnpost.total > 0 && <option value="vnpost">📮 VNPost / EMS ({carrierStats.vnpost.total.toLocaleString()})</option>}
+            {carrierStats.best.total > 0 && <option value="best">🚚 Best Express ({carrierStats.best.total.toLocaleString()})</option>}
             {carrierStats.other.total > 0 && <option value="other">Hãng khác ({carrierStats.other.total.toLocaleString()})</option>}
           </select>
 
@@ -887,6 +893,31 @@ export const BatchControls: React.FC<BatchControlsProps> = ({
                 </span>
               )}
               {selectedCarrier === 'vnpost' && <X className="w-3 h-3 ml-0.5" />}
+            </button>
+          )}
+
+          {/* Best Express */}
+          {(carrierStats.best.total > 0 || selectedCarrier === 'best') && (
+            <button
+              type="button"
+              onClick={() => onCarrierChange(selectedCarrier === 'best' ? 'all' : 'best')}
+              className={`px-2.5 py-1 rounded-md font-mono text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                selectedCarrier === 'best'
+                  ? 'bg-[#0055A5] text-white shadow-2xs ring-2 ring-[#0055A5]/40 font-black'
+                  : 'bg-white text-slate-800 border border-blue-200 hover:bg-blue-50'
+              }`}
+              title="Lọc chỉ xem đơn Best Express"
+            >
+              <span className={`w-2 h-2 rounded-full ${selectedCarrier === 'best' ? 'bg-white' : 'bg-[#0055A5]'}`} />
+              <span>Best ({carrierStats.best.total.toLocaleString()})</span>
+              {carrierStats.best.unscanned > 0 && (
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                  selectedCarrier === 'best' ? 'bg-white text-[#0055A5] font-black' : 'bg-blue-100 text-blue-900 border border-blue-200'
+                }`}>
+                  {carrierStats.best.unscanned} chưa scan
+                </span>
+              )}
+              {selectedCarrier === 'best' && <X className="w-3 h-3 ml-0.5" />}
             </button>
           )}
 

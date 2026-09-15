@@ -230,10 +230,10 @@ export function detectCarrier(code: string, channelHint: string = ''): CarrierId
     return 'vnpost';
   }
 
-  // Best Express: Starts with BEST, or 12 digits starting with 61
+  // Best Express: Starts with BEST, or 12 digits starting with 61 or 81
   if (
     cleanCode.startsWith('BEST') ||
-    (cleanCode.startsWith('61') && cleanCode.length === 12 && /^\d+$/.test(cleanCode))
+    ((cleanCode.startsWith('61') || cleanCode.startsWith('81')) && cleanCode.length === 12 && /^\d+$/.test(cleanCode))
   ) {
     return 'best';
   }
