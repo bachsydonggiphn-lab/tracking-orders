@@ -21,6 +21,7 @@ interface StatsOverviewProps {
   isProcessing: boolean;
   activeWorkers: number;
   metrics?: TrackingProgressMetrics | null;
+  activeCarrierLabel?: string;
 }
 
 export const StatsOverview: React.FC<StatsOverviewProps> = ({
@@ -30,7 +31,8 @@ export const StatsOverview: React.FC<StatsOverviewProps> = ({
   onRetryUnscanned,
   isProcessing,
   activeWorkers,
-  metrics
+  metrics,
+  activeCarrierLabel
 }) => {
   if (stats.total === 0) return null;
 
@@ -130,7 +132,7 @@ export const StatsOverview: React.FC<StatsOverviewProps> = ({
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 font-mono flex items-center">
               {isProcessing && <Activity className="w-3.5 h-3.5 mr-1 text-emerald-600 animate-pulse" />}
-              Tiến độ quét Live API
+              Tiến độ quét Live API {activeCarrierLabel ? <span className="text-emerald-700 ml-1 font-black">({activeCarrierLabel})</span> : ''}
             </span>
             <span className="text-sm font-bold text-slate-900 font-mono">
               {isProcessing && metrics 
@@ -140,7 +142,7 @@ export const StatsOverview: React.FC<StatsOverviewProps> = ({
             {isProcessing && (
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-900 text-emerald-400 border border-slate-700 animate-pulse font-mono">
                 <Zap className="w-3 h-3 mr-1 text-amber-400" />
-                Đang chạy song song {activeWorkers} đơn (Live API)
+                Đang chạy song song {activeWorkers} đơn (Live API{activeCarrierLabel ? ` • ${activeCarrierLabel}` : ''})
               </span>
             )}
           </div>

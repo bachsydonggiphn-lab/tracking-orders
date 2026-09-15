@@ -475,7 +475,7 @@ export const HISTORICAL_CARRIER_PREFIXES: HistoricalCarrierDefinition[] = [
     historicalShare: '<0.1%',
     estimatedCount: '~50+ đơn',
     isCoreWarehouse: false,
-    matchFn: (c: string) => c.startsWith('BEST') || (c.startsWith('61') && c.length === 12 && /^\d+$/.test(c))
+    matchFn: (c: string) => c.startsWith('BEST') || ((c.startsWith('61') || c.startsWith('81')) && c.length === 12 && /^\d+$/.test(c))
   }
 ];
 

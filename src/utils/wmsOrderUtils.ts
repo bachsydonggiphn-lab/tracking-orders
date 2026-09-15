@@ -115,13 +115,18 @@ export function convertRawWmsToOrderItems(
  * it encounters orders that already exist in the system, ensuring NO ORDERS ARE MISSED
  * even if auto-sync was paused for 10 minutes, 29 minutes, or several hours!
  */
+export interface FetchGaplessWMSOptions {
+  maxPages?: number;
+  pageSize?: number;
+  carrierFilterMode?: 'spx_jt' | 'all' | 'custom';
+  selectedCarriers?: string[];
+  customPrefixes?: string[];
+  onProgress?: (page: number, newOrdersCount: number) => void;
+}
+
 export async function fetchGaplessWMSOrders(
   existingCodes: Set<string> = new Set(),
-  options: {
-    maxPages?: number;
-    pageSize?: number;
-    onProgress?: (page: number, newOrdersCount: number) => void;
-  } = {}
+  options: FetchGaplessWMSOptions = {}
 ): Promise<{ orders: OrderItem[]; newCount: number; pagesQueried: number }> {
   const maxPages = options.maxPages || 20; // Safeguard limit (up to 2,000 orders)
   const pageSize = options.pageSize || 100;
@@ -148,6 +153,11 @@ export async function fetchGaplessWMSOrders(
     if (sc) selectedCarriers = JSON.parse(sc);
     if (cp) customPrefixes = JSON.parse(cp);
   } catch {}
+
+  // Override with caller options if explicitly provided (e.g. follow user active carrier filter)
+  if (options.carrierFilterMode) carrierFilterMode = options.carrierFilterMode;
+  if (options.selectedCarriers && options.selectedCarriers.length > 0) selectedCarriers = options.selectedCarriers;
+  if (options.customPrefixes && options.customPrefixes.length > 0) customPrefixes = options.customPrefixes;
 
   const allFetchedOrders: OrderItem[] = [];
   const seenInBatch = new Set<string>();

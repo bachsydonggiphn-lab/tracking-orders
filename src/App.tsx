@@ -13,7 +13,7 @@ import { OrderDetailModal } from './components/OrderDetailModal';
 import { CarrierGuideModal } from './components/CarrierGuideModal';
 import { YunWMSSyncModal } from './components/YunWMSSyncModal';
 import { JNTMultiTrackModal } from './components/JNTMultiTrackModal';
-import { AutoSyncBar } from './components/AutoSyncBar';
+import { AutoSyncBar, getEffectiveCarrierInfo } from './components/AutoSyncBar';
 import { BatchStats, CarrierId, OrderItem, TrackingProgressMetrics, TrackingStatusCategory } from './types/tracking';
 import { createOrderItem, trackSingleOrder, trackBatchOrders, clearTrackingCache } from './services/trackingService';
 import { detectCarrier, getDirectTrackingUrl } from './services/carrierDetector';
@@ -72,6 +72,28 @@ export default function App() {
   });
   const [lastAutoSyncAddedCount, setLastAutoSyncAddedCount] = useState<number>(0);
   const isAutoSyncingRef = useRef<boolean>(false);
+
+  // Auto-Sync Carrier Scope ('follow_filter' | 'all' | 'spx' | 'jt' | 'spx_jt' | 'vnpost' | 'best')
+  const [autoSyncCarrierScope, setAutoSyncCarrierScope] = useState<string>(() => {
+    try {
+      return localStorage.getItem('auto_sync_carrier_scope') || 'follow_filter';
+    } catch {
+      return 'follow_filter';
+    }
+  });
+
+  const activeCarrierInfo = useMemo(() => {
+    return getEffectiveCarrierInfo(autoSyncCarrierScope, selectedCarrier);
+  }, [autoSyncCarrierScope, selectedCarrier]);
+
+  const handleAutoSyncCarrierScopeChange = (scope: string) => {
+    setAutoSyncCarrierScope(scope);
+    try {
+      localStorage.setItem('auto_sync_carrier_scope', scope);
+    } catch {}
+    const info = getEffectiveCarrierInfo(scope, selectedCarrier);
+    showToast(`🎯 Hãng tự động quét WMS & Live: ${info.name}`);
+  };
 
   const ordersRef = useRef<OrderItem[]>(orders);
   useEffect(() => {
@@ -816,13 +838,40 @@ export default function App() {
         ? Math.max(0, Math.floor((Date.now() - previousSyncTime.getTime()) / 60000))
         : 0;
 
-      // Use Gapless WMS Fetcher:
+      // Determine target carrier scope for WMS pulling and Live scanning
+      const currentCarrierInfo = getEffectiveCarrierInfo(autoSyncCarrierScope, selectedCarrier);
+      let wmsCarrierFilterMode: 'spx_jt' | 'all' | 'custom' = 'all';
+      let wmsSelectedCarriers: string[] = [];
+
+      if (currentCarrierInfo.id === 'spx') {
+        wmsCarrierFilterMode = 'custom';
+        wmsSelectedCarriers = ['spx'];
+      } else if (currentCarrierInfo.id === 'jt') {
+        wmsCarrierFilterMode = 'custom';
+        wmsSelectedCarriers = ['jt', 'jt_cargo'];
+      } else if (currentCarrierInfo.id === 'spx_jt') {
+        wmsCarrierFilterMode = 'spx_jt';
+        wmsSelectedCarriers = ['spx', 'jt', 'jt_cargo'];
+      } else if (currentCarrierInfo.id === 'vnpost') {
+        wmsCarrierFilterMode = 'custom';
+        wmsSelectedCarriers = ['vnpost'];
+      } else if (currentCarrierInfo.id === 'best') {
+        wmsCarrierFilterMode = 'custom';
+        wmsSelectedCarriers = ['best'];
+      } else {
+        wmsCarrierFilterMode = 'all';
+        wmsSelectedCarriers = [];
+      }
+
+      // Use Gapless WMS Fetcher with specific carrier filter:
       // It automatically paginates until it touches an order already in our system,
       // guaranteeing that even if the app was closed or paused for 29 minutes,
-      // NO NEW ORDERS ARE MISSED!
+      // NO NEW ORDERS OF THIS CARRIER ARE MISSED!
       const { orders: latestOrders, pagesQueried } = await fetchGaplessWMSOrders(existingCodes, {
         maxPages: 25,
-        pageSize: 100
+        pageSize: 100,
+        carrierFilterMode: wmsCarrierFilterMode,
+        selectedCarriers: wmsSelectedCarriers
       });
 
       const now = new Date();
@@ -885,17 +934,38 @@ export default function App() {
 
       if (addedCount > 0) {
         if (minutesGap >= 2) {
-          showToast(`🛡️ Quét bù thành công: Đã nhặt đủ +${addedCount} đơn mới trong ${minutesGap} phút gián đoạn (${pagesQueried} trang WMS)! Đang quét Live NVC...`);
+          showToast(`🛡️ Quét bù thành công (${currentCarrierInfo.short}): Nhặt đủ +${addedCount} đơn mới trong ${minutesGap} phút gián đoạn (${pagesQueried} trang WMS)! Đang quét Live NVC...`);
         } else {
-          showToast(`⚡ Tự động kéo WMS: +${addedCount} mã vận đơn Shipper mới! Đang kích hoạt quét live...`);
+          showToast(`⚡ Tự động kéo WMS (${currentCarrierInfo.short}): +${addedCount} mã vận đơn Shipper mới! Đang kích hoạt quét live...`);
         }
       }
 
-      // Check if there are unscanned orders and start batch execution if not already scanning
-      const hasUnscanned = mergedList.some(o => o.statusCategory === 'not_scanned');
-      if (hasUnscanned && !isRunningRef.current) {
+      // Check if there are unscanned orders belonging strictly to the target carrier and start batch execution if not already scanning
+      const unscannedOrdersForActiveCarrier = mergedList.filter(o => {
+        if (o.statusCategory !== 'not_scanned') return false;
+        if (currentCarrierInfo.id === 'all') return true;
+        const code = (o.trackingCode || '').trim().toUpperCase();
+        if (currentCarrierInfo.id === 'spx') {
+          return o.carrier === 'spx' || code.startsWith('SPX');
+        }
+        if (currentCarrierInfo.id === 'jt') {
+          return o.carrier === 'jt' || o.carrier === 'jt_cargo' || code.startsWith('8') || code.startsWith('53');
+        }
+        if (currentCarrierInfo.id === 'spx_jt') {
+          return o.carrier === 'spx' || o.carrier === 'jt' || o.carrier === 'jt_cargo' || code.startsWith('SPX') || code.startsWith('8') || code.startsWith('53');
+        }
+        if (currentCarrierInfo.id === 'vnpost') {
+          return o.carrier === 'vnpost' || code.startsWith('EMS') || code.startsWith('VNPOST') || /^[A-Z]{2}\d{8,11}VN$/i.test(code);
+        }
+        if (currentCarrierInfo.id === 'best') {
+          return o.carrier === 'best' || code.startsWith('BEST') || ((code.startsWith('61') || code.startsWith('81')) && code.length === 12);
+        }
+        return o.carrier === currentCarrierInfo.id;
+      });
+
+      if (unscannedOrdersForActiveCarrier.length > 0 && !isRunningRef.current) {
         setTimeout(() => {
-          startBatchExecution(mergedList, 'unscanned');
+          startBatchExecution(unscannedOrdersForActiveCarrier, 'unscanned');
         }, 200);
       }
     } catch (err: any) {
@@ -1048,6 +1118,9 @@ export default function App() {
             performAutoPullAndScan();
           }}
           onOpenSettings={() => setShowYunWMSModal(true)}
+          carrierScope={autoSyncCarrierScope}
+          currentFilterCarrier={selectedCarrier}
+          onChangeCarrierScope={handleAutoSyncCarrierScopeChange}
         />
 
         {/* Step 2: Stats & Visual Progress Overview */}
@@ -1060,6 +1133,7 @@ export default function App() {
             isProcessing={isProcessing}
             activeWorkers={concurrency}
             metrics={trackingMetrics}
+            activeCarrierLabel={activeCarrierInfo.short}
           />
         )}
 
