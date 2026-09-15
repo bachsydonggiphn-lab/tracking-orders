@@ -75,7 +75,7 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
   const [only8623AndSpxvn, setOnly8623AndSpxvn] = useState<boolean>(true); // Backward compatibility
   const [excludeToday, setExcludeToday] = useState<boolean>(false); // ⚡ Mặc định Thời Gian Thực: Không trừ 1 ngày!
   const [carrierFilterMode, setCarrierFilterMode] = useState<'spx_jt' | 'all' | 'custom'>('spx_jt');
-  const [selectedCarriers, setSelectedCarriers] = useState<string[]>(['spx', 'jt']);
+  const [selectedCarriers, setSelectedCarriers] = useState<string[]>(['spx', 'jt', 'vnpost']);
   const [customPrefixes, setCustomPrefixes] = useState<string[]>([]);
   const [customPrefixInput, setCustomPrefixInput] = useState<string>('');
   const [showPrefixDictionary, setShowPrefixDictionary] = useState<boolean>(false);
@@ -619,13 +619,13 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
             </div>
 
             {/* 1. Quick Presets Bar */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 pt-0.5">
-              {/* Preset 1: SPX + J&T (Mặc định chuẩn kho) */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 pt-0.5">
+              {/* Preset 1: SPX + J&T + VNPost (Mặc định chuẩn kho) */}
               <button
                 type="button"
                 onClick={() => {
                   setCarrierFilterMode('spx_jt');
-                  setSelectedCarriers(['spx', 'jt']);
+                  setSelectedCarriers(['spx', 'jt', 'vnpost']);
                 }}
                 className={`px-2.5 py-2 rounded-lg text-xs font-bold transition-all text-left flex flex-col justify-between cursor-pointer border ${
                   carrierFilterMode === 'spx_jt'
@@ -634,7 +634,7 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
                 }`}
               >
                 <div className="flex items-center justify-between w-full">
-                  <span>🎯 SPX + J&T</span>
+                  <span>🎯 SPX + J&T + VNPost</span>
                   {carrierFilterMode === 'spx_jt' && <Check className="w-3.5 h-3.5" />}
                 </div>
                 <span className={`text-[10px] mt-1 font-normal ${carrierFilterMode === 'spx_jt' ? 'text-amber-100' : 'text-slate-500'}`}>
@@ -642,24 +642,25 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
                 </span>
               </button>
 
-              {/* Preset 2: Tất cả (Không lọc) */}
+              {/* Preset 2: Chỉ VNPost / EMS */}
               <button
                 type="button"
                 onClick={() => {
-                  setCarrierFilterMode('all');
+                  setCarrierFilterMode('custom');
+                  setSelectedCarriers(['vnpost']);
                 }}
                 className={`px-2.5 py-2 rounded-lg text-xs font-bold transition-all text-left flex flex-col justify-between cursor-pointer border ${
-                  carrierFilterMode === 'all'
+                  carrierFilterMode === 'custom' && selectedCarriers.length === 1 && selectedCarriers.includes('vnpost')
                     ? 'bg-amber-600 text-white border-amber-700 shadow-xs ring-2 ring-amber-400/40'
                     : 'bg-white text-slate-800 border-amber-200 hover:bg-amber-100/50'
                 }`}
               >
                 <div className="flex items-center justify-between w-full">
-                  <span>🌐 Tất cả các hãng</span>
-                  {carrierFilterMode === 'all' && <Check className="w-3.5 h-3.5" />}
+                  <span>📮 Chỉ VNPost / EMS</span>
+                  {carrierFilterMode === 'custom' && selectedCarriers.length === 1 && selectedCarriers.includes('vnpost') && <Check className="w-3.5 h-3.5" />}
                 </div>
-                <span className={`text-[10px] mt-1 font-normal ${carrierFilterMode === 'all' ? 'text-amber-100' : 'text-slate-500'}`}>
-                  Toàn bộ 100% đơn kho
+                <span className={`text-[10px] mt-1 font-normal ${carrierFilterMode === 'custom' && selectedCarriers.length === 1 && selectedCarriers.includes('vnpost') ? 'text-amber-100' : 'text-slate-500'}`}>
+                  Mã EA/EB...VN, EMS
                 </span>
               </button>
 
@@ -707,21 +708,42 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
                 </span>
               </button>
 
-              {/* Preset 5: Tùy chỉnh tự do */}
+              {/* Preset 5: Tất cả (Không lọc) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setCarrierFilterMode('all');
+                }}
+                className={`px-2.5 py-2 rounded-lg text-xs font-bold transition-all text-left flex flex-col justify-between cursor-pointer border ${
+                  carrierFilterMode === 'all'
+                    ? 'bg-amber-600 text-white border-amber-700 shadow-xs ring-2 ring-amber-400/40'
+                    : 'bg-white text-slate-800 border-amber-200 hover:bg-amber-100/50'
+                }`}
+              >
+                <div className="flex items-center justify-between w-full">
+                  <span>🌐 Tất cả các hãng</span>
+                  {carrierFilterMode === 'all' && <Check className="w-3.5 h-3.5" />}
+                </div>
+                <span className={`text-[10px] mt-1 font-normal ${carrierFilterMode === 'all' ? 'text-amber-100' : 'text-slate-500'}`}>
+                  Toàn bộ 100% đơn kho
+                </span>
+              </button>
+
+              {/* Preset 6: Tùy chỉnh tự do */}
               <button
                 type="button"
                 onClick={() => {
                   setCarrierFilterMode('custom');
                 }}
                 className={`px-2.5 py-2 rounded-lg text-xs font-bold transition-all text-left flex flex-col justify-between cursor-pointer border ${
-                  carrierFilterMode === 'custom' && !(selectedCarriers.length === 1 && selectedCarriers.includes('spx')) && !(selectedCarriers.includes('jt') && selectedCarriers.includes('jt_cargo') && selectedCarriers.length === 2)
+                  carrierFilterMode === 'custom' && !(selectedCarriers.length === 1 && selectedCarriers.includes('spx')) && !(selectedCarriers.includes('jt') && selectedCarriers.includes('jt_cargo') && selectedCarriers.length === 2) && !(selectedCarriers.length === 1 && selectedCarriers.includes('vnpost'))
                     ? 'bg-amber-600 text-white border-amber-700 shadow-xs ring-2 ring-amber-400/40'
                     : 'bg-white text-slate-800 border-amber-200 hover:bg-amber-100/50'
                 }`}
               >
                 <div className="flex items-center justify-between w-full">
                   <span>🛠️ Tùy chọn hãng</span>
-                  {carrierFilterMode === 'custom' && !(selectedCarriers.length === 1 && selectedCarriers.includes('spx')) && !(selectedCarriers.includes('jt') && selectedCarriers.includes('jt_cargo') && selectedCarriers.length === 2) && <Check className="w-3.5 h-3.5" />}
+                  {carrierFilterMode === 'custom' && !(selectedCarriers.length === 1 && selectedCarriers.includes('spx')) && !(selectedCarriers.includes('jt') && selectedCarriers.includes('jt_cargo') && selectedCarriers.length === 2) && !(selectedCarriers.length === 1 && selectedCarriers.includes('vnpost')) && <Check className="w-3.5 h-3.5" />}
                 </div>
                 <span className={`text-[10px] mt-1 font-normal ${carrierFilterMode === 'custom' ? 'text-amber-100' : 'text-slate-500'}`}>
                   Chọn từng hãng & mã riêng
@@ -748,10 +770,10 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
                     <span className="text-slate-300">|</span>
                     <button
                       type="button"
-                      onClick={() => setSelectedCarriers(['spx', 'jt'])}
+                      onClick={() => setSelectedCarriers(['spx', 'jt', 'vnpost'])}
                       className="text-[11px] text-amber-700 hover:text-amber-900 font-semibold cursor-pointer underline"
                     >
-                      Mặc định (SPX+J&T)
+                      Mặc định (SPX+J&T+VNPost)
                     </button>
                   </div>
                 </div>

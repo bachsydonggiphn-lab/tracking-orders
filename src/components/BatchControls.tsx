@@ -106,6 +106,7 @@ export const BatchControls: React.FC<BatchControlsProps> = ({
       ghn: { total: 0, unscanned: 0 },
       viettelpost: { total: 0, unscanned: 0 },
       ninjavan: { total: 0, unscanned: 0 },
+      vnpost: { total: 0, unscanned: 0 },
       other: { total: 0, unscanned: 0 }
     };
 
@@ -114,13 +115,15 @@ export const BatchControls: React.FC<BatchControlsProps> = ({
       const isUnscanned = o.statusCategory === 'not_scanned';
       if (isUnscanned) stats.all.unscanned++;
 
+      const clean = (o.trackingCode || '').trim().toUpperCase();
+      const isVnpostCode = o.carrier === 'vnpost' || clean.startsWith('EMS') || clean.startsWith('VNPOST') || /^[A-Z]{2}\d{8,11}VN$/i.test(clean);
+
       if (o.carrier === 'spx') {
         stats.spx.total++;
         if (isUnscanned) stats.spx.unscanned++;
       } else if (o.carrier === 'jt' || o.carrier === 'jt_cargo') {
         stats.jt.total++;
         if (isUnscanned) stats.jt.unscanned++;
-        const clean = (o.trackingCode || '').trim().toUpperCase();
         if (o.carrier === 'jt_cargo' || clean.startsWith('530') || clean.startsWith('53')) {
           stats.jt.cargo++;
         } else {
@@ -135,6 +138,9 @@ export const BatchControls: React.FC<BatchControlsProps> = ({
       } else if (o.carrier === 'ninjavan') {
         stats.ninjavan.total++;
         if (isUnscanned) stats.ninjavan.unscanned++;
+      } else if (isVnpostCode) {
+        stats.vnpost.total++;
+        if (isUnscanned) stats.vnpost.unscanned++;
       } else {
         stats.other.total++;
         if (isUnscanned) stats.other.unscanned++;
@@ -693,6 +699,7 @@ export const BatchControls: React.FC<BatchControlsProps> = ({
             {carrierStats.ghn.total > 0 && <option value="ghn">GHN ({carrierStats.ghn.total.toLocaleString()})</option>}
             {carrierStats.viettelpost.total > 0 && <option value="viettelpost">Viettel Post ({carrierStats.viettelpost.total.toLocaleString()})</option>}
             {carrierStats.ninjavan.total > 0 && <option value="ninjavan">Ninja Van ({carrierStats.ninjavan.total.toLocaleString()})</option>}
+            {carrierStats.vnpost.total > 0 && <option value="vnpost">📮 VNPost / EMS ({carrierStats.vnpost.total.toLocaleString()})</option>}
             {carrierStats.other.total > 0 && <option value="other">Hãng khác ({carrierStats.other.total.toLocaleString()})</option>}
           </select>
 
@@ -855,6 +862,31 @@ export const BatchControls: React.FC<BatchControlsProps> = ({
               <span className={`w-2 h-2 rounded-full ${selectedCarrier === 'ninjavan' ? 'bg-white' : 'bg-[#C41230]'}`} />
               <span>Ninja Van ({carrierStats.ninjavan.total.toLocaleString()})</span>
               {selectedCarrier === 'ninjavan' && <X className="w-3 h-3 ml-0.5" />}
+            </button>
+          )}
+
+          {/* VNPost / EMS */}
+          {(carrierStats.vnpost.total > 0 || selectedCarrier === 'vnpost') && (
+            <button
+              type="button"
+              onClick={() => onCarrierChange(selectedCarrier === 'vnpost' ? 'all' : 'vnpost')}
+              className={`px-2.5 py-1 rounded-md font-mono text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                selectedCarrier === 'vnpost'
+                  ? 'bg-[#E68A00] text-white shadow-2xs ring-2 ring-[#E68A00]/40 font-black'
+                  : 'bg-white text-slate-800 border border-amber-200 hover:bg-amber-50'
+              }`}
+              title="Lọc chỉ xem đơn Bưu điện Việt Nam (VNPost / EMS)"
+            >
+              <span className={`w-2 h-2 rounded-full ${selectedCarrier === 'vnpost' ? 'bg-white' : 'bg-[#E68A00]'}`} />
+              <span>VNPost ({carrierStats.vnpost.total.toLocaleString()})</span>
+              {carrierStats.vnpost.unscanned > 0 && (
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                  selectedCarrier === 'vnpost' ? 'bg-white text-[#E68A00] font-black' : 'bg-amber-100 text-amber-900 border border-amber-200'
+                }`}>
+                  {carrierStats.vnpost.unscanned} chưa scan
+                </span>
+              )}
+              {selectedCarrier === 'vnpost' && <X className="w-3 h-3 ml-0.5" />}
             </button>
           )}
 

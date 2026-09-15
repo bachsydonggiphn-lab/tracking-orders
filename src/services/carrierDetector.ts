@@ -433,17 +433,17 @@ export const HISTORICAL_CARRIER_PREFIXES: HistoricalCarrierDefinition[] = [
     id: 'vnpost',
     carrierId: 'vnpost',
     name: 'Bưu điện Việt Nam (VNPost / EMS)',
-    shortName: 'VNPost (EB/CO)',
-    badgeBg: 'bg-yellow-50 text-yellow-800',
-    badgeText: 'text-yellow-700',
-    borderColor: 'border-yellow-300',
-    prefixes: ['EB...VN', 'CO...VN', 'EMS'],
-    description: 'VNPost chuẩn UPU quốc tế 13 ký tự (EB chuyển phát nhanh, CO bưu kiện).',
-    samples: ['EB343979296VN', 'CO999428106VN'],
-    historicalShare: '~0.4%',
-    estimatedCount: '~700+ đơn',
-    isCoreWarehouse: false,
-    matchFn: (c: string) => c.startsWith('EMS') || c.startsWith('VNPOST') || /^[A-Z]{2}\d{8,11}VN$/i.test(c)
+    shortName: 'VNPost (EA/EB/EMS)',
+    badgeBg: 'bg-amber-50 text-amber-800',
+    badgeText: 'text-amber-700',
+    borderColor: 'border-amber-300',
+    prefixes: ['EA...VN', 'EB...VN', 'CO...VN', 'EMS', 'VNPOST'],
+    description: 'VNPost chuẩn UPU quốc tế 13 ký tự (EA, EB chuyển phát nhanh EMS, CO bưu kiện).',
+    samples: ['EA340865961VN', 'EB343979296VN', 'CO999428106VN'],
+    historicalShare: '~2%',
+    estimatedCount: '~5.000+ đơn',
+    isCoreWarehouse: true,
+    matchFn: (c: string) => c.startsWith('EMS') || c.startsWith('VNPOST') || /^[A-Z]{2}\d{8,11}VN$/i.test(c) || /^[ECRV][A-Z0-9]{8,11}VN$/i.test(c)
   },
   {
     id: 'ninjavan',
@@ -469,9 +469,9 @@ export const HISTORICAL_CARRIER_PREFIXES: HistoricalCarrierDefinition[] = [
     badgeBg: 'bg-blue-50 text-blue-700',
     badgeText: 'text-blue-600',
     borderColor: 'border-blue-300',
-    prefixes: ['61...', 'BEST'],
-    description: 'Best Express Việt Nam (Mã 12 chữ số bắt đầu bằng 61 hoặc BEST).',
-    samples: ['612093847291'],
+    prefixes: ['61...', '81...', 'BEST'],
+    description: 'Best Express (Mã bắt đầu bằng 61, 81 hoặc chữ BEST).',
+    samples: ['612345678901', 'BEST12345678'],
     historicalShare: '<0.1%',
     estimatedCount: '~50+ đơn',
     isCoreWarehouse: false,
@@ -480,9 +480,9 @@ export const HISTORICAL_CARRIER_PREFIXES: HistoricalCarrierDefinition[] = [
 ];
 
 export interface PrefixFilterConfig {
-  carrierFilterMode?: 'spx_jt' | 'all' | 'custom';
-  selectedCarriers?: string[]; // e.g. ['spx', 'jt', 'jt_cargo', 'ghn']
-  customPrefixes?: string[];   // e.g. ['8623', 'SPXVN', '530']
+  carrierFilterMode?: 'spx_jt' | 'spx_jt_vnpost' | 'all' | 'custom';
+  selectedCarriers?: string[]; // e.g. ['spx', 'jt', 'jt_cargo', 'vnpost', 'ghn']
+  customPrefixes?: string[];   // e.g. ['8623', 'SPXVN', '530', 'EA']
   only8623AndSpxvn?: boolean;  // legacy parameter support
 }
 
@@ -500,11 +500,12 @@ export function matchesTrackingPrefixFilter(code: string, options: PrefixFilterC
     return true;
   }
 
-  // Chế độ 2: SPX + J&T (Khuyên dùng kho VN02)
-  if (mode === 'spx_jt') {
+  // Chế độ 2: SPX + J&T + VNPost (Mặc định chuẩn kho VN02)
+  if (mode === 'spx_jt' || (mode as string) === 'spx_jt_vnpost') {
     const isSpx = cleanCode.startsWith('SPXVN') || cleanCode.startsWith('SPX') || cleanCode.startsWith('VNSPX') || cleanCode.startsWith('SPE');
     const isJt = cleanCode.startsWith('8') || cleanCode.startsWith('JT') || cleanCode.startsWith('JNT') || cleanCode.startsWith('530') || (cleanCode.startsWith('53') && /^\d{11,13}$/.test(cleanCode));
-    return isSpx || isJt;
+    const isVnpost = cleanCode.startsWith('EMS') || cleanCode.startsWith('VNPOST') || /^[A-Z]{2}\d{8,11}VN$/i.test(cleanCode) || /^[ECRV][A-Z0-9]{8,11}VN$/i.test(cleanCode);
+    return isSpx || isJt || isVnpost;
   }
 
   // Chế độ 3: Tùy chỉnh (custom)

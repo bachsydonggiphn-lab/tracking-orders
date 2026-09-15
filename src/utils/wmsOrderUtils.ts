@@ -117,7 +117,7 @@ export async function fetchLatestWMSOrders(pageSize: number = 100): Promise<Orde
   let userPass = '12345abc';
   let warehouseId = '7';
   let carrierFilterMode: 'spx_jt' | 'all' | 'custom' = 'spx_jt';
-  let selectedCarriers: string[] = ['spx', 'jt', 'jt_cargo'];
+  let selectedCarriers: string[] = ['spx', 'jt', 'jt_cargo', 'vnpost'];
   let customPrefixes: string[] = [];
 
   try {

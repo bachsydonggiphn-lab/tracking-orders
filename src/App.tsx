@@ -198,8 +198,14 @@ export default function App() {
           const code = (item.trackingCode || '').trim().toUpperCase();
           const isJT = item.carrier === 'jt' || item.carrier === 'jt_cargo' || code.startsWith('8') || code.startsWith('53');
           if (!isJT) return false;
+        } else if (selectedCarrier === 'vnpost') {
+          const code = (item.trackingCode || '').trim().toUpperCase();
+          const isVnpost = item.carrier === 'vnpost' || code.startsWith('EMS') || code.startsWith('VNPOST') || /^[A-Z]{2}\d{8,11}VN$/i.test(code);
+          if (!isVnpost) return false;
         } else if (selectedCarrier === 'other') {
-          if (['spx', 'jt', 'jt_cargo', 'ghn', 'viettelpost', 'ninjavan', 'best', 'tiktok', 'lex', 'ghtk'].includes(item.carrier)) return false;
+          const code = (item.trackingCode || '').trim().toUpperCase();
+          const isVnpost = item.carrier === 'vnpost' || code.startsWith('EMS') || code.startsWith('VNPOST') || /^[A-Z]{2}\d{8,11}VN$/i.test(code);
+          if (isVnpost || ['spx', 'jt', 'jt_cargo', 'ghn', 'viettelpost', 'ninjavan', 'best', 'tiktok', 'lex', 'ghtk'].includes(item.carrier)) return false;
         } else if (item.carrier !== selectedCarrier) {
           return false;
         }
@@ -709,7 +715,7 @@ export default function App() {
   const handleSelectOrder = (order: OrderItem) => {
     setSelectedOrder(order);
     // Automatically trigger fresh live check in background for supported carriers
-    if (order.carrier === 'ghn' || order.carrier === 'jt' || order.carrier === 'spx') {
+    if (order.carrier === 'ghn' || order.carrier === 'jt' || order.carrier === 'spx' || order.carrier === 'vnpost') {
       handleRefreshSingleOrder(order);
     }
   };
