@@ -31,6 +31,10 @@ export function extractScannedAtTime(timeline: TrackingEvent[] = []): string | u
            txt.includes('đã lấy hàng') || 
            txt.includes('tiếp nhận') || 
            txt.includes('quét mã tiếp nhận') || 
+           txt.includes('nhận hàng thành công') ||
+           txt.includes('chấp nhận gửi') ||
+           txt.includes('chấp nhận') ||
+           txt.includes('thu gom thành công') ||
            txt.includes('picked up');
   });
 
@@ -730,6 +734,70 @@ export async function trackSingleOrder(
         statusDetail: 'Không thể kết nối',
         timeline: [],
         error: 'Lỗi mạng'
+      };
+    }
+  }
+
+  // 5. VNPost / EMS tracking
+  if (
+    carrier === 'vnpost' ||
+    upperCode.startsWith('EMS') ||
+    upperCode.startsWith('VNPOST') ||
+    /^[A-Z]{2}\d{8,11}VN$/i.test(upperCode) ||
+    /^[ECRV][A-Z0-9]{8,11}VN$/i.test(upperCode)
+  ) {
+    try {
+      const apiRes = await safeFetchApi('/api/track/vnpost', { orderCode: cleanCode, force: forceRefresh });
+
+      if (apiRes.success && apiRes.data) {
+        const liveTimeline = apiRes.data.timeline || [];
+        const classified = classifyLogisticsStatus(apiRes.data.rawStatusText || '', liveTimeline, apiRes.data.statusCategory as TrackingStatusCategory);
+        const liveData = {
+          carrier: 'vnpost' as CarrierId,
+          statusCategory: classified.statusCategory,
+          rawStatusText: jsonSafeText(apiRes.data.rawStatusText, 'Đang vận chuyển'),
+          statusDetail: jsonSafeText(apiRes.data.statusDetail, ''),
+          scannedAt: apiRes.data.scannedAt || classified.scannedAt,
+          updatedAt: apiRes.data.updatedAt || (liveTimeline[0]?.time),
+          timeline: liveTimeline,
+          error: undefined
+        };
+        trackingCache.set(cacheKey, liveData);
+        return liveData;
+      } else {
+        const errDetail = apiRes.error || 'VNPost: Không tìm thấy dữ liệu vận đơn';
+        const isTimeoutOrNetwork = errDetail.includes('Quá thời gian') || errDetail.includes('kết nối') || errDetail.includes('bảo trì') || errDetail.includes('bận');
+        const isNotFound = errDetail.includes('Không tìm thấy') || errDetail.includes('chưa có') || errDetail.includes('không tồn tại');
+
+        if (isTimeoutOrNetwork || isNotFound) {
+          return {
+            carrier: 'vnpost' as CarrierId,
+            statusCategory: 'not_scanned' as TrackingStatusCategory,
+            rawStatusText: 'Chờ VNPost/EMS lấy hàng (Chưa scan)',
+            statusDetail: isTimeoutOrNetwork 
+              ? 'Hệ thống đang kết nối với cổng Bưu điện VNPost/EMS, vui lòng thử lại sau giây lát' 
+              : 'Mã vận đơn đã tạo, đang chờ bưu tá VNPost/EMS đến lấy kiện',
+            timeline: [],
+            error: undefined
+          };
+        }
+        return {
+          carrier: 'vnpost' as CarrierId,
+          statusCategory: 'error' as TrackingStatusCategory,
+          rawStatusText: 'Lỗi tra cứu VNPost',
+          statusDetail: errDetail,
+          timeline: [],
+          error: errDetail
+        };
+      }
+    } catch (err: any) {
+      return {
+        carrier: 'vnpost' as CarrierId,
+        statusCategory: 'not_scanned',
+        rawStatusText: 'Chờ VNPost/EMS lấy hàng (Chưa scan)',
+        statusDetail: 'Hệ thống đang kết nối lại với cổng VNPost...',
+        timeline: [],
+        error: undefined
       };
     }
   }

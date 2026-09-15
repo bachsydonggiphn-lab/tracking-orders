@@ -1511,6 +1511,243 @@ async function fetchNinjaVanLive(trackingId: string): Promise<{ success: boolean
 }
 
 // ----------------------------------------------------
+// VNPost / EMS Integration Service
+// ----------------------------------------------------
+function mapVNPostStatus(summaryStatus: string, logs: any[] = []) {
+  const summary = (summaryStatus || '').toLowerCase();
+
+  // 1. Giao hàng thành công
+  if (
+    summary.includes('phát thành công') ||
+    summary.includes('đã phát') ||
+    summary.includes('delivered') ||
+    summary.includes('ký nhận')
+  ) {
+    return {
+      category: 'delivered',
+      label: summaryStatus || 'Phát hàng thành công',
+      isScanned: true
+    };
+  }
+
+  // 2. Chuyển hoàn / Hoàn hàng
+  if (
+    summary.includes('chuyển hoàn') ||
+    summary.includes('hoàn hàng') ||
+    summary.includes('trả lại') ||
+    summary.includes('không phát được') ||
+    summary.includes('phát không thành công') ||
+    summary.includes('hoàn trả') ||
+    summary.includes('chờ chuyển hoàn')
+  ) {
+    return {
+      category: 'returned',
+      label: summaryStatus || 'Bưu gửi chuyển hoàn',
+      isScanned: true
+    };
+  }
+
+  // 3. Đã hủy
+  if (summary.includes('hủy') || summary.includes('huỷ')) {
+    return {
+      category: 'cancelled',
+      label: summaryStatus || 'Đơn hàng đã hủy',
+      isScanned: false
+    };
+  }
+
+  // Kiểm tra lịch sử logs nếu có
+  const hasPickupScan = logs.some(l => {
+    const t = (l.TRANG_THAI || '').toLowerCase();
+    return (
+      t.includes('nhận hàng thành công') ||
+      t.includes('picked up') ||
+      t.includes('chấp nhận gửi') ||
+      t.includes('posting') ||
+      t.includes('vận chuyển') ||
+      t.includes('bưu cục') ||
+      t.includes('giao bưu tá phát') ||
+      t.includes('phát thành công')
+    );
+  });
+
+  // 4. Đang giao hàng / Đang vận chuyển
+  if (
+    summary.includes('đang giao') ||
+    summary.includes('đang phát') ||
+    summary.includes('giao bưu tá') ||
+    summary.includes('out for physical delivery') ||
+    summary.includes('vận chuyển') ||
+    summary.includes('bưu cục') ||
+    summary.includes('trung chuyển') ||
+    hasPickupScan
+  ) {
+    const isOnlyPickedUp = logs.length <= 2 && logs.every(l => {
+      const t = (l.TRANG_THAI || '').toLowerCase();
+      return t.includes('nhận hàng') || t.includes('chấp nhận') || t.includes('điều tin') || t.includes('phân hướng');
+    });
+
+    if (isOnlyPickedUp) {
+      return {
+        category: 'scanned',
+        label: summaryStatus || 'Bưu điện đã nhận hàng',
+        isScanned: true
+      };
+    }
+
+    return {
+      category: 'in_transit',
+      label: summaryStatus || 'Đang vận chuyển',
+      isScanned: true
+    };
+  }
+
+  // 5. Chưa scan lấy hàng (Điều tin, phân hướng, chờ thu gom)
+  return {
+    category: 'not_scanned',
+    label: summaryStatus || 'Chờ bưu điện lấy hàng',
+    isScanned: false
+  };
+}
+
+// Single VNPost / EMS Live Tracking
+async function fetchVNPostLive(orderCode: string, force: boolean = false): Promise<{ success: boolean; data?: any; error?: string }> {
+  const cleanCode = orderCode.trim().toUpperCase();
+  const cacheKey = `vnpost:${cleanCode}`;
+  if (!force) {
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      return { success: true, data: cached };
+    }
+  }
+
+  const itemCode = cleanCode.endsWith('EMS') ? cleanCode : (cleanCode + 'EMS');
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+      const res = await fetch(`https://api.myems.vn/TrackAndTraceItemCode?itemcode=${encodeURIComponent(itemCode)}&language=0`, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          "Accept": "application/json, text/plain, */*",
+          "Origin": "https://ems.com.vn",
+          "Referer": "https://ems.com.vn/"
+        }
+      });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        if (attempt === 1) {
+          return { success: false, error: `VNPost API HTTP ${res.status}` };
+        }
+        await new Promise(r => setTimeout(r, 300));
+        continue;
+      }
+
+      const json = (await res.json()) as any;
+      if (json && (json.Code === "00" || json.TBL_INFO || (Array.isArray(json.List_TBL_DINH_VI) && json.List_TBL_DINH_VI.length > 0))) {
+        const info = json.TBL_INFO || {};
+        const dinhViLogs = json.List_TBL_DINH_VI || [];
+
+        const mapped = mapVNPostStatus(info.TRANG_THAI || (dinhViLogs[dinhViLogs.length - 1]?.TRANG_THAI) || '', dinhViLogs);
+
+        let scannedAtTime: string | undefined;
+        const pickupLog = dinhViLogs.find((l: any) => {
+          const t = (l.TRANG_THAI || '').toLowerCase();
+          return t.includes('nhận hàng') || t.includes('chấp nhận') || t.includes('posting') || t.includes('picked up');
+        });
+        if (pickupLog) {
+          scannedAtTime = formatDate(pickupLog.NGAY_TRANG_THAI || `${pickupLog.NGAY} ${pickupLog.GIO}`);
+        } else if (mapped.isScanned && dinhViLogs.length > 0) {
+          const firstNonDispatch = dinhViLogs.find((l: any) => {
+            const t = (l.TRANG_THAI || '').toLowerCase();
+            return !t.includes('điều tin') && !t.includes('phân hướng');
+          });
+          if (firstNonDispatch) {
+            scannedAtTime = formatDate(firstNonDispatch.NGAY_TRANG_THAI || `${firstNonDispatch.NGAY} ${firstNonDispatch.GIO}`);
+          }
+        }
+
+        const timeline = dinhViLogs.slice().reverse().map((l: any) => ({
+          time: formatDate(l.NGAY_TRANG_THAI || `${l.NGAY} ${l.GIO}`),
+          statusText: l.TRANG_THAI?.replace(/\s+/g, ' ').trim() || '',
+          location: l.VI_TRI?.replace(/\s+/g, ' ').trim() || '',
+          description: l.DIEN_THOAI ? `Hotline/SĐT: ${l.DIEN_THOAI}` : ''
+        }));
+
+        const latestLog = dinhViLogs[dinhViLogs.length - 1];
+        const statusDetail = info.TRANG_THAI || latestLog?.TRANG_THAI || 'Bưu gửi VNPost';
+
+        const resultData = {
+          carrier: 'vnpost',
+          statusCategory: mapped.category,
+          rawStatusText: statusDetail,
+          statusDetail: latestLog?.VI_TRI ? `${statusDetail} - ${latestLog.VI_TRI.replace(/\s+/g, ' ').trim()}` : statusDetail,
+          scannedAt: mapped.isScanned ? (scannedAtTime || formatDate(new Date().toISOString())) : undefined,
+          updatedAt: timeline[0]?.time,
+          recipientLocation: info.DIA_CHI_NHAN?.replace(/\s+/g, ' ').trim(),
+          recipientName: info.HO_TEN_NHAN?.replace(/\s+/g, ' ').trim(),
+          senderName: info.HO_TEN_GUI?.replace(/\s+/g, ' ').trim(),
+          weight: info.KHOI_LUONG ? `${info.KHOI_LUONG}g` : undefined,
+          refCode: info.MA_THAM_CHIEU,
+          timeline
+        };
+
+        setInCache(cacheKey, resultData);
+        return { success: true, data: resultData };
+      } else {
+        return {
+          success: false,
+          error: json?.Message || 'Chưa tìm thấy hành trình bưu gửi trên hệ thống VNPost / EMS'
+        };
+      }
+    } catch (err: any) {
+      if (attempt === 1) {
+        return {
+          success: false,
+          error: err.message ? `Lỗi kết nối tới VNPost: ${err.message}` : 'Lỗi kết nối cổng VNPost'
+        };
+      }
+      await new Promise(r => setTimeout(r, 300));
+    }
+  }
+
+  return {
+    success: false,
+    error: 'Hệ thống VNPost không phản hồi, vui lòng thử lại'
+  };
+}
+
+// VNPost Batch Tracking
+async function fetchVNPostBatchLive(
+  trackingCodes: string[],
+  force: boolean = false
+): Promise<Record<string, { success: boolean; data?: any; error?: string; carrier?: string }>> {
+  const cleanCodes = Array.from(new Set(trackingCodes.map(c => (c || '').trim().toUpperCase()).filter(Boolean)));
+  if (cleanCodes.length === 0) return {};
+
+  const results: Record<string, { success: boolean; data?: any; error?: string; carrier?: string }> = {};
+
+  const CONCURRENCY = 10;
+  for (let i = 0; i < cleanCodes.length; i += CONCURRENCY) {
+    const chunk = cleanCodes.slice(i, i + CONCURRENCY);
+    await Promise.all(
+      chunk.map(async (code) => {
+        results[code] = await fetchVNPostLive(code, force);
+      })
+    );
+    if (i + CONCURRENCY < cleanCodes.length) {
+      await new Promise(r => setTimeout(r, 100));
+    }
+  }
+
+  return results;
+}
+
+// ----------------------------------------------------
 // YunWMS (WMS Cloud) Integration Service
 // ----------------------------------------------------
 let yunWMSSessionCookie: string | null = null;
@@ -2443,6 +2680,17 @@ async function startServer() {
     res.json(result);
   });
 
+  // Single track VNPost / EMS endpoint
+  app.post("/api/track/vnpost", async (req, res) => {
+    const { orderCode, force } = req.body;
+    if (!orderCode) {
+      res.status(400).json({ success: false, error: "Missing orderCode" });
+      return;
+    }
+    const result = await fetchVNPostLive(orderCode, Boolean(force));
+    res.json(result);
+  });
+
   // Clear tracking liveCache endpoint
   app.post("/api/track/clear-cache", (req, res) => {
     liveCache.clear();
@@ -2461,9 +2709,10 @@ async function startServer() {
     const isGlobalForce = Boolean(force);
     const results: Record<string, any> = {};
 
-    // 1. Properly resolve carrier based on tracking code format first (prevents mislabelled J&T notes from breaking SPX/GHN)
+    // 1. Properly resolve carrier based on tracking code format first (prevents mislabelled J&T notes from breaking SPX/GHN/VNPost)
     const jtExpressItems: typeof orders = [];
     const jtCargoItems: typeof orders = [];
+    const vnpostItems: typeof orders = [];
     const otherItems: typeof orders = [];
 
     for (const item of orders) {
@@ -2495,6 +2744,13 @@ async function startServer() {
         (upper.startsWith('SHP') && upper.length > 10)
       ) {
         resolvedCarrier = 'ninjavan';
+      } else if (
+        upper.startsWith('EMS') ||
+        upper.startsWith('VNPOST') ||
+        /^[A-Z]{2}\d{8,11}VN$/i.test(upper) ||
+        /^[ECRV][A-Z0-9]{8,11}VN$/i.test(upper)
+      ) {
+        resolvedCarrier = 'vnpost';
       } else if (upper.startsWith('VT') || upper.startsWith('VTP')) {
         resolvedCarrier = 'viettelpost';
       } else if (
@@ -2518,6 +2774,8 @@ async function startServer() {
         jtCargoItems.push(item);
       } else if (resolvedCarrier === 'jt') {
         jtExpressItems.push(item);
+      } else if (resolvedCarrier === 'vnpost') {
+        vnpostItems.push(item);
       } else {
         otherItems.push(item);
       }
@@ -2527,6 +2785,13 @@ async function startServer() {
     const cargoCodes = jtCargoItems.map(o => o.code);
     const cargoResults = await fetchJNTCargoBatchLive(cargoCodes, isGlobalForce);
     for (const [code, resObj] of Object.entries(cargoResults)) {
+      results[code] = resObj;
+    }
+
+    // Process VNPost / EMS in parallel
+    const vnpostCodes = vnpostItems.map(o => o.code);
+    const vnpostResults = await fetchVNPostBatchLive(vnpostCodes, isGlobalForce);
+    for (const [code, resObj] of Object.entries(vnpostResults)) {
       results[code] = resObj;
     }
 
@@ -2572,6 +2837,15 @@ async function startServer() {
           } else if (item.carrier === 'ninjavan' || upper.startsWith('NIVN') || upper.startsWith('SHP')) {
             const nvRes = await fetchNinjaVanLive(item.code);
             results[item.code] = nvRes;
+          } else if (
+            item.carrier === 'vnpost' ||
+            upper.startsWith('EMS') ||
+            upper.startsWith('VNPOST') ||
+            /^[A-Z]{2}\d{8,11}VN$/i.test(upper) ||
+            /^[ECRV][A-Z0-9]{8,11}VN$/i.test(upper)
+          ) {
+            const vnpostRes = await fetchVNPostLive(item.code, itemForce);
+            results[item.code] = vnpostRes;
           } else {
             results[item.code] = {
               success: false,

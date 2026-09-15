@@ -75,8 +75,8 @@ export const CARRIERS: Record<CarrierId, CarrierConfig> = {
     badgeBg: 'bg-amber-50 text-amber-800 border-amber-200',
     badgeText: 'text-amber-700',
     prefixHints: ['EVN', 'CVN', 'RVN', 'VNPOST', 'EMS'],
-    trackingUrlPattern: 'http://www.vnpost.vn/vi-vn/dinh-vi/buu-pham?key={CODE}',
-    website: 'http://www.vnpost.vn/'
+    trackingUrlPattern: 'https://ems.com.vn/tra-cuu/tra-cuu-buu-gui?code={CODE}',
+    website: 'https://ems.com.vn/'
   },
   best: {
     id: 'best',
@@ -220,11 +220,12 @@ export function detectCarrier(code: string, channelHint: string = ''): CarrierId
     return 'viettelpost';
   }
 
-  // VNPost / EMS: Starts with EMS, VNPOST, or /^[ECR][A-Z0-9]{8,11}VN$/i
+  // VNPost / EMS: Starts with EMS, VNPOST, or standard UPU /^[A-Z]{2}\d{8,11}VN$/i
   if (
     cleanCode.startsWith('EMS') || 
     cleanCode.startsWith('VNPOST') ||
-    /^[ECR][A-Z0-9]{8,11}VN$/i.test(cleanCode)
+    /^[A-Z]{2}\d{8,11}VN$/i.test(cleanCode) ||
+    /^[ECRV][A-Z0-9]{8,11}VN$/i.test(cleanCode)
   ) {
     return 'vnpost';
   }
