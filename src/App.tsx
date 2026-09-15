@@ -73,26 +73,14 @@ export default function App() {
   const [lastAutoSyncAddedCount, setLastAutoSyncAddedCount] = useState<number>(0);
   const isAutoSyncingRef = useRef<boolean>(false);
 
-  // Auto-Sync Carrier Scope ('follow_filter' | 'all' | 'spx' | 'jt' | 'spx_jt' | 'vnpost' | 'best')
-  const [autoSyncCarrierScope, setAutoSyncCarrierScope] = useState<string>(() => {
-    try {
-      return localStorage.getItem('auto_sync_carrier_scope') || 'follow_filter';
-    } catch {
-      return 'follow_filter';
-    }
-  });
-
   const activeCarrierInfo = useMemo(() => {
-    return getEffectiveCarrierInfo(autoSyncCarrierScope, selectedCarrier);
-  }, [autoSyncCarrierScope, selectedCarrier]);
+    return getEffectiveCarrierInfo(selectedCarrier);
+  }, [selectedCarrier]);
 
-  const handleAutoSyncCarrierScopeChange = (scope: string) => {
-    setAutoSyncCarrierScope(scope);
-    try {
-      localStorage.setItem('auto_sync_carrier_scope', scope);
-    } catch {}
-    const info = getEffectiveCarrierInfo(scope, selectedCarrier);
-    showToast(`🎯 Hãng tự động quét WMS & Live: ${info.name}`);
+  const handleSelectCarrier = (carrier: string) => {
+    setSelectedCarrier(carrier);
+    const info = getEffectiveCarrierInfo(carrier);
+    showToast(`🎯 Hãng đồng bộ YunWMS & quét live: ${info.name}`);
   };
 
   const ordersRef = useRef<OrderItem[]>(orders);
@@ -839,7 +827,7 @@ export default function App() {
         : 0;
 
       // Determine target carrier scope for WMS pulling and Live scanning
-      const currentCarrierInfo = getEffectiveCarrierInfo(autoSyncCarrierScope, selectedCarrier);
+      const currentCarrierInfo = getEffectiveCarrierInfo(selectedCarrier);
       let wmsCarrierFilterMode: 'spx_jt' | 'all' | 'custom' = 'all';
       let wmsSelectedCarriers: string[] = [];
 
@@ -1118,9 +1106,8 @@ export default function App() {
             performAutoPullAndScan();
           }}
           onOpenSettings={() => setShowYunWMSModal(true)}
-          carrierScope={autoSyncCarrierScope}
-          currentFilterCarrier={selectedCarrier}
-          onChangeCarrierScope={handleAutoSyncCarrierScopeChange}
+          selectedCarrier={selectedCarrier}
+          onSelectCarrier={handleSelectCarrier}
         />
 
         {/* Step 2: Stats & Visual Progress Overview */}

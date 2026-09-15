@@ -335,13 +335,11 @@ export const ImportArea: React.FC<ImportAreaProps> = ({
           {onOpenYunWMS && (
             <button
               onClick={onOpenYunWMS}
-              className="inline-flex items-center px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer bg-emerald-50 text-emerald-900 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 shadow-2xs"
+              className="inline-flex items-center px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 shadow-2xs"
+              title="Cấu hình tài khoản, kho hàng & xem từ điển đầu mã YunWMS"
             >
-              <CloudDownload className="w-3.5 h-3.5 mr-1.5 text-emerald-700" />
-              Đồng bộ từ YunWMS
-              <span className="ml-1.5 px-1.5 py-0.2 rounded text-[10px] bg-emerald-600 text-white font-mono">
-                API
-              </span>
+              <CloudDownload className="w-3.5 h-3.5 mr-1.5 text-slate-500" />
+              Cài đặt WMS Cloud
             </button>
           )}
         </div>
