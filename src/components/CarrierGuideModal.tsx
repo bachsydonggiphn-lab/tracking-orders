@@ -37,6 +37,16 @@ export const CarrierGuideModal: React.FC<CarrierGuideModalProps> = ({ isOpen, on
       description: 'Mã bưu gửi bưu chính Viettel Post toàn quốc.'
     },
     {
+      carrier: CARRIERS.vnpost,
+      rule: 'Bắt đầu bằng EMS, VNPOST hoặc chuẩn UPU quốc tế (Ví dụ: EMS12345678VN, EA123456789VN)',
+      description: 'Hệ thống tự động tra cứu qua Cổng Bưu điện Việt Nam VNPost / EMS: https://ems.com.vn/'
+    },
+    {
+      carrier: CARRIERS.best,
+      rule: 'Bắt đầu bằng "TTVN" (TikTok Shop / TMĐT), BEST, hoặc 12 số đầu 61, 81 (Ví dụ: TTVN00123456789, 612345678901)',
+      description: 'Hệ thống tự động phân loại chính xác vào hãng Best Express và tra cứu trực tiếp qua Cổng Best Express: https://best-inc.vn/'
+    },
+    {
       carrier: CARRIERS.ninjavan,
       rule: 'Bắt đầu bằng NIVN, SHP hoặc NLVN (Ví dụ: NIVN82910293)',
       description: 'Mã vận đơn Ninja Van Việt Nam.'

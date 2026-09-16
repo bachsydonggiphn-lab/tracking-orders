@@ -223,12 +223,12 @@ export default function App() {
           if (!isVnpost) return false;
         } else if (selectedCarrier === 'best') {
           const code = (item.trackingCode || '').trim().toUpperCase();
-          const isBest = item.carrier === 'best' || code.startsWith('BEST') || ((code.startsWith('61') || code.startsWith('81')) && code.length === 12 && /^\d+$/.test(code));
+          const isBest = item.carrier === 'best' || code.startsWith('TTVN') || code.startsWith('BEST') || ((code.startsWith('61') || code.startsWith('81')) && code.length === 12 && /^\d+$/.test(code));
           if (!isBest) return false;
         } else if (selectedCarrier === 'other') {
           const code = (item.trackingCode || '').trim().toUpperCase();
           const isVnpost = item.carrier === 'vnpost' || code.startsWith('EMS') || code.startsWith('VNPOST') || /^[A-Z]{2}\d{8,11}VN$/i.test(code);
-          const isBest = item.carrier === 'best' || code.startsWith('BEST') || ((code.startsWith('61') || code.startsWith('81')) && code.length === 12 && /^\d+$/.test(code));
+          const isBest = item.carrier === 'best' || code.startsWith('TTVN') || code.startsWith('BEST') || ((code.startsWith('61') || code.startsWith('81')) && code.length === 12 && /^\d+$/.test(code));
           if (isVnpost || isBest || ['spx', 'jt', 'jt_cargo', 'ghn', 'viettelpost', 'ninjavan', 'tiktok', 'lex', 'ghtk'].includes(item.carrier)) return false;
         } else if (item.carrier !== selectedCarrier) {
           return false;
@@ -946,7 +946,7 @@ export default function App() {
           return o.carrier === 'vnpost' || code.startsWith('EMS') || code.startsWith('VNPOST') || /^[A-Z]{2}\d{8,11}VN$/i.test(code);
         }
         if (currentCarrierInfo.id === 'best') {
-          return o.carrier === 'best' || code.startsWith('BEST') || ((code.startsWith('61') || code.startsWith('81')) && code.length === 12);
+          return o.carrier === 'best' || code.startsWith('TTVN') || code.startsWith('BEST') || ((code.startsWith('61') || code.startsWith('81')) && code.length === 12);
         }
         return o.carrier === currentCarrierInfo.id;
       });

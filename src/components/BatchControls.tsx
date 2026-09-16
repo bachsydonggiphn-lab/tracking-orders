@@ -118,7 +118,7 @@ export const BatchControls: React.FC<BatchControlsProps> = ({
 
       const clean = (o.trackingCode || '').trim().toUpperCase();
       const isVnpostCode = o.carrier === 'vnpost' || clean.startsWith('EMS') || clean.startsWith('VNPOST') || /^[A-Z]{2}\d{8,11}VN$/i.test(clean);
-      const isBestCode = o.carrier === 'best' || clean.startsWith('BEST') || ((clean.startsWith('61') || clean.startsWith('81')) && clean.length === 12 && /^\d+$/.test(clean));
+      const isBestCode = o.carrier === 'best' || clean.startsWith('TTVN') || clean.startsWith('BEST') || ((clean.startsWith('61') || clean.startsWith('81')) && clean.length === 12 && /^\d+$/.test(clean));
 
       if (o.carrier === 'spx') {
         stats.spx.total++;

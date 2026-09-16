@@ -85,7 +85,7 @@ export const CARRIERS: Record<CarrierId, CarrierConfig> = {
     logoColor: '#0055A5',
     badgeBg: 'bg-blue-50 text-blue-700 border-blue-200',
     badgeText: 'text-blue-600',
-    prefixHints: ['61', '81', 'BEST'],
+    prefixHints: ['TTVN', '61', '81', 'BEST'],
     trackingUrlPattern: 'https://best-inc.vn/track?bills={CODE}',
     website: 'https://best-inc.vn/'
   },
@@ -96,7 +96,7 @@ export const CARRIERS: Record<CarrierId, CarrierConfig> = {
     logoColor: '#000000',
     badgeBg: 'bg-zinc-100 text-zinc-900 border-zinc-300',
     badgeText: 'text-zinc-900',
-    prefixHints: ['TTVN', 'TT'],
+    prefixHints: ['TT'],
     trackingUrlPattern: 'https://seller-vn.tiktok.com/',
     website: 'https://seller-vn.tiktok.com/'
   },
@@ -174,8 +174,17 @@ export function detectCarrier(code: string, channelHint: string = ''): CarrierId
     return 'jt';
   }
 
-  // TikTok Shop Logistics: Starts with TTVN or TT (long)
-  if (cleanCode.startsWith('TTVN') || (cleanCode.startsWith('TT') && cleanCode.length >= 12)) {
+  // Best Express: Starts with TTVN (TikTok Shop / TMĐT), BEST, or 12 digits starting with 61 or 81
+  if (
+    cleanCode.startsWith('TTVN') ||
+    cleanCode.startsWith('BEST') ||
+    ((cleanCode.startsWith('61') || cleanCode.startsWith('81')) && cleanCode.length === 12 && /^\d+$/.test(cleanCode))
+  ) {
+    return 'best';
+  }
+
+  // TikTok Shop Logistics: Other TT codes (when not starting with TTVN)
+  if (!cleanCode.startsWith('TTVN') && cleanCode.startsWith('TT') && cleanCode.length >= 12) {
     return 'tiktok';
   }
 
@@ -228,14 +237,6 @@ export function detectCarrier(code: string, channelHint: string = ''): CarrierId
     /^[ECRV][A-Z0-9]{8,11}VN$/i.test(cleanCode)
   ) {
     return 'vnpost';
-  }
-
-  // Best Express: Starts with BEST, or 12 digits starting with 61 or 81
-  if (
-    cleanCode.startsWith('BEST') ||
-    ((cleanCode.startsWith('61') || cleanCode.startsWith('81')) && cleanCode.length === 12 && /^\d+$/.test(cleanCode))
-  ) {
-    return 'best';
   }
 
   // 2. Fallback heuristics based on pure numeric code length
@@ -469,13 +470,13 @@ export const HISTORICAL_CARRIER_PREFIXES: HistoricalCarrierDefinition[] = [
     badgeBg: 'bg-blue-50 text-blue-700',
     badgeText: 'text-blue-600',
     borderColor: 'border-blue-300',
-    prefixes: ['61...', '81...', 'BEST'],
-    description: 'Best Express (Mã bắt đầu bằng 61, 81 hoặc chữ BEST).',
-    samples: ['612345678901', 'BEST12345678'],
+    prefixes: ['TTVN...', '61...', '81...', 'BEST'],
+    description: 'Best Express (Mã TTVN... từ TikTok Shop/TMĐT, mã 12 số 61, 81 hoặc chữ BEST).',
+    samples: ['TTVN00123456789', '612345678901', 'BEST12345678'],
     historicalShare: '<0.1%',
     estimatedCount: '~50+ đơn',
     isCoreWarehouse: false,
-    matchFn: (c: string) => c.startsWith('BEST') || ((c.startsWith('61') || c.startsWith('81')) && c.length === 12 && /^\d+$/.test(c))
+    matchFn: (c: string) => c.startsWith('TTVN') || c.startsWith('BEST') || ((c.startsWith('61') || c.startsWith('81')) && c.length === 12 && /^\d+$/.test(c))
   }
 ];
 

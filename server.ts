@@ -3026,6 +3026,7 @@ async function startServer() {
       ) {
         resolvedCarrier = 'vnpost';
       } else if (
+        upper.startsWith('TTVN') ||
         upper.startsWith('BEST') ||
         ((upper.startsWith('61') || upper.startsWith('81')) && upper.length === 12 && /^\d+$/.test(upper))
       ) {

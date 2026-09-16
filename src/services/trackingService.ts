@@ -805,6 +805,7 @@ export async function trackSingleOrder(
   // 6. Best Express tracking
   if (
     carrier === 'best' ||
+    upperCode.startsWith('TTVN') ||
     upperCode.startsWith('BEST') ||
     ((upperCode.startsWith('61') || upperCode.startsWith('81')) && upperCode.length === 12 && /^\d+$/.test(upperCode))
   ) {

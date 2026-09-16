@@ -73,10 +73,10 @@ export const UNIFIED_CARRIER_OPTIONS = [
   },
   { 
     id: 'best', 
-    name: 'Best Express', 
+    name: 'Best Express (TTVN, 61, 81)', 
     shortLabel: '📦 Best Express', 
-    desc: 'Chỉ đồng bộ & quét đơn Best Express (BEST, 61..., 81...)',
-    colorClass: 'bg-red-700 text-white'
+    desc: 'Chỉ đồng bộ & quét đơn Best Express (TTVN..., 61..., 81..., BEST)',
+    colorClass: 'bg-blue-700 text-white'
   }
 ];
 
@@ -127,12 +127,12 @@ export const getEffectiveCarrierInfo = (targetId: string = 'all') => {
     case 'best':
       return { 
         id: 'best', 
-        name: 'Best Express', 
+        name: 'Best Express (TTVN, 61, 81)', 
         short: 'Best Express', 
-        badgeBg: 'bg-red-500/25 text-red-300 border-red-500/50', 
-        activeBg: 'bg-red-700 text-white shadow-xs',
+        badgeBg: 'bg-blue-500/25 text-blue-300 border-blue-500/50', 
+        activeBg: 'bg-blue-700 text-white shadow-xs',
         icon: '📦',
-        desc: 'Mã BEST, 61..., 81...'
+        desc: 'Mã TTVN..., 61..., 81..., BEST'
       };
     default:
       return { 
