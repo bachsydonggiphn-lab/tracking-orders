@@ -21,12 +21,14 @@ import { OrderItem } from '../types/tracking';
 import { CARRIERS, getJNTMultiTrackingUrl } from '../services/carrierDetector';
 import { getStatusLabel } from '../services/exportService';
 import { getOrderAgeInfo } from '../utils/dateFilter';
+import { classifyLogisticsStatus } from '../services/trackingService';
 
 interface OrderDetailModalProps {
   order: OrderItem | null;
   onClose: () => void;
   onToast: (msg: string) => void;
   onRefresh?: (order: OrderItem, customPhone?: string) => Promise<void>;
+  onUpdateOrder?: (order: OrderItem) => void;
   defaultJtSuffix?: string;
   allOrders?: OrderItem[];
 }
@@ -36,6 +38,7 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
   onClose,
   onToast,
   onRefresh,
+  onUpdateOrder,
   defaultJtSuffix = '8836',
   allOrders = []
 }) => {
@@ -46,10 +49,45 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
   const [timeline, setTimeline] = useState<any[]>(() => order?.timeline || []);
   const [isLoadingTimeline, setIsLoadingTimeline] = useState(false);
 
+  // Compute effective status derived from timeline events to avoid stale/erroneous 'not_scanned' status
+  const effectiveStatus = React.useMemo(() => {
+    if (!order) return { statusCategory: 'not_scanned', rawStatusText: '', statusDetail: '', scannedAt: undefined };
+    if (!timeline || timeline.length === 0) {
+      return {
+        statusCategory: order.statusCategory,
+        rawStatusText: order.rawStatusText,
+        statusDetail: order.statusDetail,
+        scannedAt: order.scannedAt
+      };
+    }
+
+    const latestEvent = timeline[0];
+    const rawText = latestEvent?.statusText || order.rawStatusText || '';
+    const classified = classifyLogisticsStatus(rawText, timeline, order.statusCategory);
+
+    return {
+      statusCategory: classified.statusCategory,
+      rawStatusText: rawText || order.rawStatusText,
+      statusDetail: latestEvent?.location ? `Bưu cục: ${latestEvent.location}` : (order.statusDetail || ''),
+      scannedAt: classified.scannedAt || order.scannedAt
+    };
+  }, [order, timeline]);
+
   React.useEffect(() => {
     if (!order) return;
     if (order.timeline && order.timeline.length > 0) {
       setTimeline(order.timeline);
+      const classified = classifyLogisticsStatus(order.timeline[0]?.statusText || order.rawStatusText, order.timeline, order.statusCategory);
+      if (classified.statusCategory !== order.statusCategory && classified.statusCategory !== 'not_scanned' && onUpdateOrder) {
+        onUpdateOrder({
+          ...order,
+          statusCategory: classified.statusCategory,
+          rawStatusText: order.timeline[0]?.statusText || order.rawStatusText,
+          statusDetail: order.timeline[0]?.location ? `Bưu cục: ${order.timeline[0].location}` : order.statusDetail,
+          scannedAt: classified.scannedAt || order.scannedAt,
+          timeline: order.timeline
+        });
+      }
       return;
     }
 
@@ -60,6 +98,19 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
       .then(data => {
         if (isMounted && data.success && Array.isArray(data.timeline)) {
           setTimeline(data.timeline);
+          if (data.timeline.length > 0) {
+            const classified = classifyLogisticsStatus(data.timeline[0]?.statusText || order.rawStatusText, data.timeline, order.statusCategory);
+            if (classified.statusCategory !== order.statusCategory && classified.statusCategory !== 'not_scanned' && onUpdateOrder) {
+              onUpdateOrder({
+                ...order,
+                statusCategory: classified.statusCategory,
+                rawStatusText: data.timeline[0]?.statusText || order.rawStatusText,
+                statusDetail: data.timeline[0]?.location ? `Bưu cục: ${data.timeline[0].location}` : order.statusDetail,
+                scannedAt: classified.scannedAt || order.scannedAt,
+                timeline: data.timeline
+              });
+            }
+          }
         }
       })
       .catch(() => {})
@@ -203,36 +254,42 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
           <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-1.5">
-                {order.statusCategory === 'not_scanned' && (order.rawStatusText?.toLowerCase().includes('kiện vấn đề') || order.rawStatusText?.toLowerCase().includes('kiện khó')) ? (
+                {effectiveStatus.statusCategory === 'not_scanned' && (effectiveStatus.rawStatusText?.toLowerCase().includes('kiện vấn đề') || effectiveStatus.rawStatusText?.toLowerCase().includes('kiện khó')) ? (
                   <AlertTriangle className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
                 ) : (
-                  <Radio className="w-3 h-3 text-emerald-500 animate-pulse" />
+                  <Radio className={`w-3 h-3 animate-pulse ${effectiveStatus.statusCategory === 'not_scanned' ? 'text-amber-500' : 'text-emerald-500'}`} />
                 )}
                 <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider font-mono text-[11px]">Trạng thái hệ thống:</span>
               </div>
               <span className={`text-xs font-bold px-2 py-0.5 rounded-md border shadow-2xs font-mono ${
-                order.statusCategory === 'not_scanned' && (order.rawStatusText?.toLowerCase().includes('kiện vấn đề') || order.rawStatusText?.toLowerCase().includes('kiện khó'))
+                effectiveStatus.statusCategory === 'not_scanned' && (effectiveStatus.rawStatusText?.toLowerCase().includes('kiện vấn đề') || effectiveStatus.rawStatusText?.toLowerCase().includes('kiện khó'))
                   ? 'bg-amber-100 text-amber-950 border-amber-300'
+                  : effectiveStatus.statusCategory === 'scanned'
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                  : effectiveStatus.statusCategory === 'in_transit'
+                  ? 'bg-blue-50 text-blue-800 border-blue-300'
+                  : effectiveStatus.statusCategory === 'delivered'
+                  ? 'bg-emerald-100 text-emerald-950 border-emerald-400'
                   : 'bg-white border-slate-200 text-slate-800'
               }`}>
-                {order.statusCategory === 'not_scanned' && (order.rawStatusText?.toLowerCase().includes('kiện vấn đề') || order.rawStatusText?.toLowerCase().includes('kiện khó'))
+                {effectiveStatus.statusCategory === 'not_scanned' && (effectiveStatus.rawStatusText?.toLowerCase().includes('kiện vấn đề') || effectiveStatus.rawStatusText?.toLowerCase().includes('kiện khó'))
                   ? 'CHƯA SCAN (KIỆN VẤN ĐỀ / KIỆN KHÓ)'
-                  : getStatusLabel(order.statusCategory)}
+                  : getStatusLabel(effectiveStatus.statusCategory)}
               </span>
             </div>
 
             <div className="text-sm font-bold text-slate-900">
-              {order.rawStatusText}
+              {effectiveStatus.rawStatusText}
             </div>
 
-            {order.statusDetail && (
+            {effectiveStatus.statusDetail && (
               <p className="text-xs text-slate-600 font-medium">
-                {order.statusDetail}
+                {effectiveStatus.statusDetail}
               </p>
             )}
 
             {/* Age indicator for unscanned / waiting orders */}
-            {order.statusCategory === 'not_scanned' && (
+            {effectiveStatus.statusCategory === 'not_scanned' && (
               <div className={`p-2.5 rounded-lg border flex items-start space-x-2 text-xs ${
                 ageInfo.category === '1day' 
                   ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950' 
@@ -256,14 +313,14 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
               </div>
             )}
 
-            {(order.scannedAt || order.updatedAt) && (
+            {(effectiveStatus.scannedAt || order.updatedAt) && (
               <div className="pt-2.5 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-500 font-mono">
-                {order.scannedAt && order.statusCategory !== 'not_scanned' ? (
+                {effectiveStatus.scannedAt && effectiveStatus.statusCategory !== 'not_scanned' ? (
                   <div className="flex items-center">
                     <Clock className="w-3.5 h-3.5 mr-1.5 text-emerald-600 shrink-0" />
-                    <span>Quét nhận: <strong className="ml-1 text-slate-900 font-semibold">{order.scannedAt}</strong></span>
+                    <span>Quét nhận: <strong className="ml-1 text-slate-900 font-semibold">{effectiveStatus.scannedAt}</strong></span>
                   </div>
-                ) : order.statusCategory === 'not_scanned' ? (
+                ) : effectiveStatus.statusCategory === 'not_scanned' ? (
                   <div className="flex items-center">
                     <Clock className="w-3.5 h-3.5 mr-1.5 text-amber-600 shrink-0" />
                     <span>Trạng thái: <strong className="ml-1 text-amber-800 font-medium">Chưa quét nhận (Chờ bưu tá)</strong></span>

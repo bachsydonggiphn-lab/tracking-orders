@@ -723,8 +723,48 @@ async function fetchJNTBatchLive(
       }
     }
 
-    // Any remaining codes in this batch had no data on J&T portal => The package has NOT been scanned by courier yet!
+    // Any remaining codes in this batch had no new data on J&T portal => Check DB first before falling back to not_scanned
     for (const code of remainingInBatch) {
+      let existingTimeline: any[] | null = null;
+      try {
+        existingTimeline = await getOrderTimeline(code);
+      } catch {}
+
+      if (existingTimeline && existingTimeline.length > 0) {
+        const pickupItem = existingTimeline.slice().reverse().find(item => {
+          const txt = (item.statusText || '').toLowerCase();
+          const isIssue = txt.includes('kiện vấn đề') || txt.includes('kiện khó') || txt.includes('tạo đơn') || txt.includes('chuẩn bị');
+          if (isIssue) return false;
+          return txt.includes('đã nhận hàng') || 
+                 (txt.includes('nhân viên') && txt.includes('đã nhận')) ||
+                 txt.includes('nhận kiện hàng') || 
+                 txt.includes('nhập bưu cục') || 
+                 txt.includes('lấy hàng thành công') || 
+                 txt.includes('đã lấy hàng') || 
+                 txt.includes('tiếp nhận') || 
+                 txt.includes('quét mã tiếp nhận') ||
+                 txt.includes('picked up');
+        });
+
+        const topItem = existingTimeline[0];
+        const hasPickup = Boolean(pickupItem);
+        const mapped = mapJNTStatus(topItem?.statusText || '', hasPickup);
+
+        if (hasPickup || mapped.category !== 'not_scanned') {
+          const preservedData = {
+            carrier: 'jt',
+            statusCategory: mapped.category,
+            rawStatusText: topItem?.statusText || 'Đang vận chuyển (J&T)',
+            statusDetail: topItem?.statusText || '',
+            updatedAt: topItem?.time,
+            scannedAt: pickupItem ? pickupItem.time : undefined,
+            timeline: existingTimeline
+          };
+          results[code] = { success: true, data: preservedData };
+          continue;
+        }
+      }
+
       const isCargo = code.startsWith('530') || code.startsWith('53');
       results[code] = {
         success: true,
@@ -749,7 +789,37 @@ async function fetchJNTBatchLive(
 async function fetchJNTLive(billCode: string, cellphone?: string): Promise<{ success: boolean; data?: any; error?: string; carrier?: string }> {
   const cleanBillCode = billCode.trim().toUpperCase();
   const batchRes = await fetchJNTBatchLive([cleanBillCode], cellphone);
-  return batchRes[cleanBillCode] || {
+  if (batchRes[cleanBillCode]) {
+    return batchRes[cleanBillCode];
+  }
+
+  try {
+    const existingTimeline = await getOrderTimeline(cleanBillCode);
+    if (existingTimeline && existingTimeline.length > 0) {
+      const pickupItem = existingTimeline.slice().reverse().find(item => {
+        const txt = (item.statusText || '').toLowerCase();
+        return txt.includes('đã nhận hàng') || (txt.includes('nhân viên') && txt.includes('đã nhận')) || txt.includes('tiếp nhận');
+      });
+      const topItem = existingTimeline[0];
+      const hasPickup = Boolean(pickupItem);
+      const mapped = mapJNTStatus(topItem?.statusText || '', hasPickup);
+      return {
+        success: true,
+        carrier: 'jt',
+        data: {
+          carrier: 'jt',
+          statusCategory: mapped.category,
+          rawStatusText: topItem?.statusText || 'Đang vận chuyển (J&T)',
+          statusDetail: topItem?.statusText || '',
+          updatedAt: topItem?.time,
+          scannedAt: pickupItem ? pickupItem.time : undefined,
+          timeline: existingTimeline
+        }
+      };
+    }
+  } catch {}
+
+  return {
     success: true,
     carrier: 'jt',
     data: {

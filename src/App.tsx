@@ -701,6 +701,13 @@ export default function App() {
     }
   };
 
+  const handleUpdateOrder = (updatedOrder: OrderItem) => {
+    ordersRef.current = ordersRef.current.map(o => (o.id === updatedOrder.id || o.trackingCode === updatedOrder.trackingCode) ? updatedOrder : o);
+    setOrders([...ordersRef.current]);
+    setSelectedOrder(updatedOrder);
+    upsertOrdersToSql([updatedOrder]);
+  };
+
   const handleRefreshSingleOrder = async (order: OrderItem, customPhone?: string) => {
     try {
       const phoneToUse = customPhone || order.extraInfo?.customerPhone || jtPhoneSuffix;
@@ -711,16 +718,40 @@ export default function App() {
         true, // force refresh from live API
         jtPhoneSuffix
       );
+
+      // DEFENSIVE GUARD: If current order was ALREADY scanned / in-transit / delivered,
+      // and live API returned not_scanned or empty timeline (due to IP block, captcha, or network timeout),
+      // DO NOT DOWNGRADE an already picked-up order to not_scanned!
+      const currentHasScan = (order.statusCategory !== 'not_scanned' && order.statusCategory !== 'error') || Boolean(order.scannedAt);
+      const resHasScan = (res.statusCategory !== 'not_scanned' && res.statusCategory !== 'error') || (Array.isArray(res.timeline) && res.timeline.length > 0);
+
+      let finalCategory = res.statusCategory;
+      let finalRawStatus = res.rawStatusText;
+      let finalDetail = res.statusDetail;
+      let finalTimeline = res.timeline;
+      let finalScannedAt = res.scannedAt;
+
+      if (currentHasScan && !resHasScan) {
+        finalCategory = order.statusCategory;
+        finalRawStatus = order.rawStatusText;
+        finalDetail = order.statusDetail;
+        finalTimeline = (order.timeline && order.timeline.length > 0) ? order.timeline : res.timeline;
+        finalScannedAt = order.scannedAt || res.scannedAt;
+        showToast(`Cổng hãng tạm thời bận, hệ thống giữ nguyên trạng thái đã quét (${getStatusLabel(order.statusCategory)})`);
+      } else {
+        showToast(`Đã đồng bộ trạng thái trực tiếp: ${res.rawStatusText}`);
+      }
+
       const updatedOrder: OrderItem = {
         ...order,
         carrier: res.carrier,
-        statusCategory: res.statusCategory,
-        rawStatusText: res.rawStatusText,
-        statusDetail: res.statusDetail,
-        scannedAt: res.scannedAt,
-        updatedAt: res.updatedAt,
-        timeline: res.timeline,
-        error: res.error,
+        statusCategory: finalCategory,
+        rawStatusText: finalRawStatus,
+        statusDetail: finalDetail,
+        scannedAt: finalScannedAt,
+        updatedAt: res.updatedAt || order.updatedAt,
+        timeline: finalTimeline,
+        error: resHasScan ? undefined : (currentHasScan ? undefined : res.error),
         isChecking: false,
         extraInfo: {
           ...order.extraInfo,
@@ -732,7 +763,6 @@ export default function App() {
       setSelectedOrder(updatedOrder);
       // Persist immediately to SQLite database
       upsertOrdersToSql([updatedOrder]);
-      showToast(`Đã đồng bộ trạng thái trực tiếp: ${res.rawStatusText}`);
     } catch (e: any) {
       showToast(`Lỗi khi làm mới: ${e.message}`);
     }
@@ -740,9 +770,12 @@ export default function App() {
 
   const handleSelectOrder = (order: OrderItem) => {
     setSelectedOrder(order);
-    // Automatically trigger fresh live check in background for supported carriers
-    if (order.carrier === 'ghn' || order.carrier === 'jt' || order.carrier === 'spx' || order.carrier === 'vnpost' || order.carrier === 'best') {
-      handleRefreshSingleOrder(order);
+    // Only auto-refresh in background if the order was not yet scanned or had an error.
+    // If an order was already scanned or delivered, do not trigger an aggressive live refetch on mere row clicks.
+    if (order.statusCategory === 'not_scanned' || order.statusCategory === 'error') {
+      if (order.carrier === 'ghn' || order.carrier === 'jt' || order.carrier === 'spx' || order.carrier === 'vnpost' || order.carrier === 'best') {
+        handleRefreshSingleOrder(order);
+      }
     }
   };
 
@@ -1174,6 +1207,7 @@ export default function App() {
         onClose={() => setSelectedOrder(null)}
         onToast={showToast}
         onRefresh={handleRefreshSingleOrder}
+        onUpdateOrder={handleUpdateOrder}
         defaultJtSuffix={jtPhoneSuffix}
         allOrders={orders}
       />
