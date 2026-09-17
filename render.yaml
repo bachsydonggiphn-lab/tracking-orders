@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: gip-yxl-tracking-
+    name: gip-yxl-tracking
     runtime: node
     plan: free
     buildCommand: npm install && npm run build
