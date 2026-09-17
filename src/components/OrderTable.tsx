@@ -20,7 +20,7 @@ import {
   Layers
 } from 'lucide-react';
 import { OrderItem, TrackingStatusCategory } from '../types/tracking';
-import { CARRIERS, getJNTMultiTrackingUrl } from '../services/carrierDetector';
+import { CARRIERS, getJNTMultiTrackingUrl, getBestMultiTrackingUrl } from '../services/carrierDetector';
 import { getOrderAgeInfo } from '../utils/dateFilter';
 
 interface OrderTableProps {
@@ -60,6 +60,8 @@ export const OrderTable: React.FC<OrderTableProps> = ({
   // Selected orders
   const selectedOrders = orders.filter(o => selectedIds.has(o.id));
   const selectedJtOrders = selectedOrders.filter(o => o.carrier === 'jt');
+  const selectedBestOrders = selectedOrders.filter(o => o.carrier === 'best' || (o.trackingCode && o.trackingCode.startsWith('TTVN')));
+  const hasBestInList = orders.some(o => o.carrier === 'best' || (o.trackingCode && o.trackingCode.startsWith('TTVN')));
 
   const isAllCurrentPageSelected = currentOrders.length > 0 && currentOrders.every(o => selectedIds.has(o.id));
 
@@ -102,6 +104,18 @@ export const OrderTable: React.FC<OrderTableProps> = ({
     onToast(`Đã chọn ${jtOrders.length} đơn J&T Express.`);
   };
 
+  const handleSelect20Best = () => {
+    const bestOrders = orders.filter(o => o.carrier === 'best' || (o.trackingCode && o.trackingCode.startsWith('TTVN'))).slice(0, 20);
+    if (bestOrders.length === 0) {
+      onToast('Không có đơn Best Express nào trong danh sách.');
+      return;
+    }
+    const next = new Set<string>();
+    bestOrders.forEach(o => next.add(o.id));
+    setSelectedIds(next);
+    onToast(`Đã chọn ${bestOrders.length} đơn Best Express.`);
+  };
+
   const handleClearSelection = () => {
     setSelectedIds(new Set());
   };
@@ -117,6 +131,18 @@ export const OrderTable: React.FC<OrderTableProps> = ({
     const url = getJNTMultiTrackingUrl(targetCodes, phone);
     window.open(url, '_blank');
     onToast(`Đang mở trang tra cứu 1 lần 10 đơn trên J&T Express (${targetCodes.length} mã)...`);
+  };
+
+  // Open multi tracking for selected Best Express orders (up to 20 with 1 single captcha solve!)
+  const handleOpenSelectedBestWeb = () => {
+    if (selectedBestOrders.length === 0) {
+      onToast('Chưa chọn đơn Best Express nào.');
+      return;
+    }
+    const targetCodes = selectedBestOrders.slice(0, 20).map(o => o.trackingCode);
+    const url = getBestMultiTrackingUrl(targetCodes);
+    window.open(url, '_blank');
+    onToast(`Đang mở tra cứu ${targetCodes.length} đơn Best Express (Xoay Captcha đúng 1 lần cho cả 20 đơn)...`);
   };
 
   // Open 10 consecutive J&T orders starting from this row
@@ -137,6 +163,24 @@ export const OrderTable: React.FC<OrderTableProps> = ({
     const url = getJNTMultiTrackingUrl(jtCodes, phone);
     window.open(url, '_blank');
     onToast(`Đang mở trang tra cứu ${jtCodes.length} đơn J&T trên web hãng...`);
+  };
+
+  // Open 20 consecutive Best Express orders starting from this row
+  const handleOpen20BestFromRow = (clickedOrder: OrderItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const orderIndex = orders.findIndex(o => o.id === clickedOrder.id);
+    if (orderIndex === -1) return;
+
+    const bestCodes: string[] = [clickedOrder.trackingCode];
+    for (let i = orderIndex + 1; i < orders.length && bestCodes.length < 20; i++) {
+      if (orders[i].carrier === 'best' || (orders[i].trackingCode && orders[i].trackingCode.startsWith('TTVN'))) {
+        bestCodes.push(orders[i].trackingCode);
+      }
+    }
+
+    const url = getBestMultiTrackingUrl(bestCodes);
+    window.open(url, '_blank');
+    onToast(`Đang mở ${bestCodes.length} đơn Best Express trên web hãng (Chỉ cần xoay Captcha 1 lần)...`);
   };
 
   const handleCopySelectedCodes = async () => {
@@ -318,6 +362,16 @@ export const OrderTable: React.FC<OrderTableProps> = ({
           >
             ⚡ Chọn 10 đơn J&T
           </button>
+          {hasBestInList && (
+            <button
+              type="button"
+              onClick={handleSelect20Best}
+              className="px-2.5 py-1 text-xs font-bold rounded-lg bg-blue-50 text-blue-800 hover:bg-blue-100 border border-blue-200 transition-colors cursor-pointer shadow-2xs"
+              title="Tự động chọn 20 đơn Best Express đầu tiên để mở tra cứu"
+            >
+              🚚 Chọn 20 đơn Best
+            </button>
+          )}
           <button
             type="button"
             onClick={handleSelectFirst10}
@@ -367,9 +421,26 @@ export const OrderTable: React.FC<OrderTableProps> = ({
                 ({selectedJtOrders.length} đơn J&T Express)
               </span>
             )}
+            {selectedBestOrders.length > 0 && (
+              <span className="text-[11px] text-blue-300 font-mono font-semibold">
+                ({selectedBestOrders.length} đơn Best Express)
+              </span>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {selectedBestOrders.length > 0 && (
+              <button
+                type="button"
+                onClick={handleOpenSelectedBestWeb}
+                className="inline-flex items-center px-3 py-1.5 rounded-lg font-bold text-xs bg-blue-600 hover:bg-blue-500 text-white transition-colors cursor-pointer shadow-xs"
+                title="Mở tối đa 20 đơn Best Express cùng lúc trên cổng tra cứu best-inc.vn (Chỉ cần xoay Captcha đúng 1 lần!)"
+              >
+                <ExternalLink className="w-3.5 h-3.5 mr-1" />
+                Mở 20 đơn trên web Best ({Math.min(20, selectedBestOrders.length)})
+              </button>
+            )}
+
             {selectedJtOrders.length > 0 && (
               <button
                 type="button"
@@ -622,6 +693,18 @@ export const OrderTable: React.FC<OrderTableProps> = ({
                         >
                           <span className="flex items-center font-mono font-black text-[10px]">
                             10 <ExternalLink className="w-2.5 h-2.5 ml-0.5" />
+                          </span>
+                        </button>
+                      )}
+                      {(order.carrier === 'best' || (order.trackingCode && order.trackingCode.startsWith('TTVN'))) && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpen20BestFromRow(order, e)}
+                          className="px-1.5 py-1 text-blue-700 bg-blue-50 hover:bg-blue-100 active:bg-blue-200 border border-blue-200 rounded-lg transition-colors cursor-pointer"
+                          title="Tra cứu 1 lần 20 đơn Best Express trên web hãng (từ đơn này và 19 đơn kế tiếp - Xoay Captcha 1 lần cho cả 20 đơn)"
+                        >
+                          <span className="flex items-center font-mono font-black text-[10px]">
+                            20 <ExternalLink className="w-2.5 h-2.5 ml-0.5" />
                           </span>
                         </button>
                       )}

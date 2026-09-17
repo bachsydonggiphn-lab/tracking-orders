@@ -329,6 +329,16 @@ export function getJNTMultiTrackingUrl(codes: string[], phone: string = '8836'):
   return `https://jtexpress.vn/vi/tracking?type=track&billcode=${encodeURIComponent(cleanCodes.join(','))}&cellphone=${encodeURIComponent(cleanPhone)}`;
 }
 
+/**
+ * Generates official Best Express multi-tracking URL for up to 20 bill codes in 1 query
+ * Format: https://www.best-inc.vn/track?bills=code1,code2,...
+ * Best Express allows up to 20 tracking codes with single captcha solve!
+ */
+export function getBestMultiTrackingUrl(codes: string[]): string {
+  const cleanCodes = codes.map(c => c.trim().toUpperCase()).filter(Boolean).slice(0, 20);
+  return `https://www.best-inc.vn/track?bills=${encodeURIComponent(cleanCodes.join(','))}`;
+}
+
 // ---------------------------------------------------------------------------
 // TỪ ĐIỂN ĐẦU MÃ VẬN ĐƠN ĐÃ HỌC TỪ 179.000+ ĐƠN HÀNG THỰC TẾ TRÊN YUNWMS
 // ---------------------------------------------------------------------------

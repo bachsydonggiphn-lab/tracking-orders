@@ -1932,14 +1932,14 @@ async function fetchBestLive(orderCode: string, force: boolean = false): Promise
         const data = {
           carrier: 'best',
           statusCategory: 'not_scanned',
-          rawStatusText: 'BEST Express: Cần xác minh tra cứu',
-          statusDetail: 'Hãng yêu cầu xác minh Captcha bảo vệ. Bấm liên kết để tra cứu trực tiếp.',
+          rawStatusText: 'Chờ BEST Express lấy hàng (Chưa scan)',
+          statusDetail: 'Đơn mới tạo WMS • Hãng bảo mật Captcha (bấm để xem trực tiếp)',
           trackUrl: `https://best-inc.vn/track?bills=${encodeURIComponent(cleanCode)}`,
           scannedAt: undefined,
           timeline: []
         };
-        // Short cache TTL for captcha required
-        setInCache(cacheKey, data, 60 * 1000);
+        // Short cache TTL for captcha required (3 minutes)
+        setInCache(cacheKey, data, 180 * 1000);
         return { success: true, data, carrier: 'best' };
       }
 

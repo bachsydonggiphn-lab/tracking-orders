@@ -814,12 +814,18 @@ export async function trackSingleOrder(
 
       if (apiRes.success && apiRes.data) {
         const liveTimeline = apiRes.data.timeline || [];
-        const classified = classifyLogisticsStatus(apiRes.data.rawStatusText || '', liveTimeline, apiRes.data.statusCategory as TrackingStatusCategory);
+        let rawStatusText = jsonSafeText(apiRes.data.rawStatusText, 'Đang vận chuyển');
+        let statusDetail = jsonSafeText(apiRes.data.statusDetail, '');
+        if (rawStatusText.includes('Cần xác minh') || rawStatusText.includes('Captcha') || statusDetail.includes('Captcha')) {
+          rawStatusText = 'Chờ BEST Express lấy hàng (Chưa scan)';
+          statusDetail = 'Đơn mới tạo WMS • Hãng bảo mật Captcha (bấm để xem trực tiếp)';
+        }
+        const classified = classifyLogisticsStatus(rawStatusText, liveTimeline, apiRes.data.statusCategory as TrackingStatusCategory);
         const liveData = {
           carrier: 'best' as CarrierId,
           statusCategory: classified.statusCategory,
-          rawStatusText: jsonSafeText(apiRes.data.rawStatusText, 'Đang vận chuyển'),
-          statusDetail: jsonSafeText(apiRes.data.statusDetail, ''),
+          rawStatusText,
+          statusDetail,
           scannedAt: apiRes.data.scannedAt || classified.scannedAt,
           updatedAt: apiRes.data.updatedAt || (liveTimeline[0]?.time),
           timeline: liveTimeline,
