@@ -133,6 +133,7 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
   const abortControllerRef = useRef<AbortController | null>(null);
   const isStoppingRef = useRef<boolean>(false);
   const accumulatedOrdersRef = useRef<any[]>([]);
+  const modalBodyRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
@@ -331,6 +332,7 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
     setActiveThreadsCount(threads);
     isStoppingRef.current = false;
     accumulatedOrdersRef.current = [];
+    modalBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
 
     const startTime = Date.now();
     const isUnlimited = limit <= 0;
@@ -517,7 +519,7 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+        <div ref={modalBodyRef} className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
           
           {/* Live Progress Bar if Loading */}
           {isLoading && (
@@ -1444,25 +1446,32 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
             Đóng
           </button>
 
-          <button
-            type="button"
-            onClick={handleStartSync}
-            disabled={isLoading}
-            className="inline-flex items-center px-5 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-lg shadow-sm transition-all cursor-pointer disabled:opacity-50"
-          >
-            {isLoading ? (
-              <>
-                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                Đang cào đa luồng ({progressPercent}% - {speedText || 'Đang tải'})...
-              </>
-            ) : (
-              <>
-                <Zap className="w-4 h-4 mr-1.5 text-amber-300" />
-                Bắt Đầu Cào Đa Luồng ({threads} Luồng) • {isCustomDate ? (customDateFor && customDateTo ? `Từ ${customDateFor} đến ${customDateTo}` : 'Tùy Chọn Ngày') : (dateInterval === '3' ? '3 Ngày Gần Nhất' : dateInterval === '7' ? '7 Ngày Gần Nhất' : dateInterval === '14' ? '14 Ngày' : dateInterval === '30' ? '30 Ngày' : 'Toàn Bộ')} {limit > 0 ? `(${limit.toLocaleString()} đơn)` : '(Không Giới Hạn)'}
-                <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-              </>
-            )}
-          </button>
+          {isLoading ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleStopAndUseLoaded}
+                className="inline-flex items-center px-4 py-2.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 active:bg-rose-800 rounded-lg shadow-sm transition-all cursor-pointer animate-pulse"
+              >
+                <StopCircle className="w-4 h-4 mr-1.5" />
+                Dừng & Lấy ngay {loadedCount > 0 ? `(${loadedCount.toLocaleString()} đơn)` : ''}
+              </button>
+              <div className="inline-flex items-center px-3.5 py-2 text-xs font-bold text-emerald-950 bg-emerald-100 border border-emerald-300 rounded-lg">
+                <RefreshCw className="w-4 h-4 mr-2 text-emerald-700 animate-spin" />
+                Đang cào {progressPercent}% ({loadedCount.toLocaleString()} / {targetCount > 0 ? targetCount.toLocaleString() : '...'})
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleStartSync}
+              className="inline-flex items-center px-5 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-lg shadow-sm transition-all cursor-pointer"
+            >
+              <Zap className="w-4 h-4 mr-1.5 text-amber-300" />
+              Bắt Đầu Cào Đa Luồng ({threads} Luồng) • {isCustomDate ? (customDateFor && customDateTo ? `Từ ${customDateFor} đến ${customDateTo}` : 'Tùy Chọn Ngày') : (dateInterval === '3' ? '3 Ngày Gần Nhất' : dateInterval === '7' ? '7 Ngày Gần Nhất' : dateInterval === '14' ? '14 Ngày' : dateInterval === '30' ? '30 Ngày' : 'Toàn Bộ')} {limit > 0 ? `(${limit.toLocaleString()} đơn)` : '(Không Giới Hạn)'}
+              <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+            </button>
+          )}
         </div>
 
       </div>
