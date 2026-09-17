@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Truck, ExternalLink, RefreshCw, Layers, CloudDownload, Maximize, Minimize, Database } from 'lucide-react';
+import { ExternalLink, RefreshCw, Layers, CloudDownload, Maximize, Minimize, Database } from 'lucide-react';
 import { CARRIERS } from '../services/carrierDetector';
 
 interface HeaderProps {
@@ -46,13 +46,13 @@ export const Header: React.FC<HeaderProps> = ({
           
           {/* Brand & Title */}
           <div className="flex items-center space-x-3.5">
-            <div className="w-10 h-10 rounded-lg bg-slate-900 flex items-center justify-center text-white shadow-sm border border-slate-800 shrink-0">
-              <Truck className="w-5 h-5 text-emerald-400" />
+            <div className="w-11 h-11 rounded-xl overflow-hidden shadow-sm border border-slate-200 shrink-0 bg-white p-0.5">
+              <img src="/logo.webp" alt="GIP Logo" className="w-full h-full object-contain" />
             </div>
             <div>
               <div className="flex items-center space-x-2">
                 <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight font-sans">
-                  Tra Cứu Vận Đơn Hàng Loạt
+                  GIP &mdash; Tra Cứu Vận Đơn Hàng Loạt
                 </h1>
                 <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200 font-mono">
                   5.000+ ĐƠN/NGÀY
