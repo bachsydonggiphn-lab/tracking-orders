@@ -66,7 +66,7 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
   const [customDateFor, setCustomDateFor] = useState<string>('');
   const [customDateTo, setCustomDateTo] = useState<string>('');
   const [customerCode, setCustomerCode] = useState<string>(''); // YD or all
-  const [orderStatus, setOrderStatus] = useState<string>('8'); // Default to 8 = Đã xuất kho (Shipper)
+  const [orderStatus, setOrderStatus] = useState<string>(''); // Mặc định tất cả trạng thái kho (để không bỏ sót đơn Đã nộp 4, Dán nhãn 7 của Best Express)
   const [threads, setThreads] = useState<number>(20); // Multi-threading concurrency (default 20 workers)
   const [autoTrack, setAutoTrack] = useState<boolean>(true);
   const [appendMode, setAppendMode] = useState<boolean>(true);
@@ -82,9 +82,6 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
 
   const handleToggleRealtime = (enableRealtime: boolean) => {
     setExcludeToday(!enableRealtime);
-    if (enableRealtime) {
-      setOrderStatus('8'); // Cứ có trạng thái Shipper (Đã xuất kho) là quét
-    }
   };
 
   const handleToggleCarrier = (id: string) => {
@@ -621,7 +618,7 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
             </div>
 
             {/* 1. Quick Presets Bar */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 pt-0.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-1.5 pt-0.5">
               {/* Preset 1: SPX + J&T + VNPost (Mặc định chuẩn kho) */}
               <button
                 type="button"
@@ -710,7 +707,30 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
                 </span>
               </button>
 
-              {/* Preset 5: Tất cả (Không lọc) */}
+              {/* Preset 5: Chỉ Best Express */}
+              <button
+                type="button"
+                onClick={() => {
+                  setCarrierFilterMode('custom');
+                  setSelectedCarriers(['best']);
+                  setOrderStatus(''); // Cào tất cả trạng thái để lấy đơn Đã nộp 4, Dán nhãn 7
+                }}
+                className={`px-2.5 py-2 rounded-lg text-xs font-bold transition-all text-left flex flex-col justify-between cursor-pointer border ${
+                  carrierFilterMode === 'custom' && selectedCarriers.length === 1 && selectedCarriers.includes('best')
+                    ? 'bg-blue-600 text-white border-blue-700 shadow-xs ring-2 ring-blue-400/40'
+                    : 'bg-white text-slate-800 border-amber-200 hover:bg-amber-100/50'
+                }`}
+              >
+                <div className="flex items-center justify-between w-full">
+                  <span>📦 Chỉ Best Express</span>
+                  {carrierFilterMode === 'custom' && selectedCarriers.length === 1 && selectedCarriers.includes('best') && <Check className="w-3.5 h-3.5" />}
+                </div>
+                <span className={`text-[10px] mt-1 font-normal ${carrierFilterMode === 'custom' && selectedCarriers.length === 1 && selectedCarriers.includes('best') ? 'text-blue-100' : 'text-slate-500'}`}>
+                  Mã TTVN... TikTok/TMĐT
+                </span>
+              </button>
+
+              {/* Preset 6: Tất cả (Không lọc) */}
               <button
                 type="button"
                 onClick={() => {
@@ -731,21 +751,21 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
                 </span>
               </button>
 
-              {/* Preset 6: Tùy chỉnh tự do */}
+              {/* Preset 7: Tùy chỉnh tự do */}
               <button
                 type="button"
                 onClick={() => {
                   setCarrierFilterMode('custom');
                 }}
                 className={`px-2.5 py-2 rounded-lg text-xs font-bold transition-all text-left flex flex-col justify-between cursor-pointer border ${
-                  carrierFilterMode === 'custom' && !(selectedCarriers.length === 1 && selectedCarriers.includes('spx')) && !(selectedCarriers.includes('jt') && selectedCarriers.includes('jt_cargo') && selectedCarriers.length === 2) && !(selectedCarriers.length === 1 && selectedCarriers.includes('vnpost'))
+                  carrierFilterMode === 'custom' && !(selectedCarriers.length === 1 && selectedCarriers.includes('spx')) && !(selectedCarriers.includes('jt') && selectedCarriers.includes('jt_cargo') && selectedCarriers.length === 2) && !(selectedCarriers.length === 1 && selectedCarriers.includes('vnpost')) && !(selectedCarriers.length === 1 && selectedCarriers.includes('best'))
                     ? 'bg-amber-600 text-white border-amber-700 shadow-xs ring-2 ring-amber-400/40'
                     : 'bg-white text-slate-800 border-amber-200 hover:bg-amber-100/50'
                 }`}
               >
                 <div className="flex items-center justify-between w-full">
                   <span>🛠️ Tùy chọn hãng</span>
-                  {carrierFilterMode === 'custom' && !(selectedCarriers.length === 1 && selectedCarriers.includes('spx')) && !(selectedCarriers.includes('jt') && selectedCarriers.includes('jt_cargo') && selectedCarriers.length === 2) && !(selectedCarriers.length === 1 && selectedCarriers.includes('vnpost')) && <Check className="w-3.5 h-3.5" />}
+                  {carrierFilterMode === 'custom' && !(selectedCarriers.length === 1 && selectedCarriers.includes('spx')) && !(selectedCarriers.includes('jt') && selectedCarriers.includes('jt_cargo') && selectedCarriers.length === 2) && !(selectedCarriers.length === 1 && selectedCarriers.includes('vnpost')) && !(selectedCarriers.length === 1 && selectedCarriers.includes('best')) && <Check className="w-3.5 h-3.5" />}
                 </div>
                 <span className={`text-[10px] mt-1 font-normal ${carrierFilterMode === 'custom' ? 'text-amber-100' : 'text-slate-500'}`}>
                   Chọn từng hãng & mã riêng
@@ -1372,9 +1392,9 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
               {/* Trạng thái kho */}
               <div className="sm:col-span-2">
                 <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center justify-between">
-                  <span>Trạng thái xử lý WMS (Shipper xuất kho)</span>
-                  <span className="text-[11px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded">
-                    Mặc định: Đã xuất kho (Mã 8)
+                  <span>Trạng thái xử lý WMS</span>
+                  <span className="text-[11px] text-blue-700 font-bold bg-blue-50 px-2 py-0.5 rounded">
+                    Mặc định: Tất cả trạng thái (Bao gồm Đã nộp, Dán nhãn, Xuất kho)
                   </span>
                 </label>
                 <select
@@ -1382,10 +1402,10 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
                   onChange={(e) => setOrderStatus(e.target.value)}
                   className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-slate-900"
                 >
-                  <option value="8">🚚 Đã xuất kho (Trạng thái Shipper - Mã 8) [Khuyên dùng]</option>
-                  <option value="">🌐 Tất cả trạng thái kho WMS</option>
-                  <option value="4">Đã nộp (Chờ xử lý xuất)</option>
-                  <option value="7">Đã dán nhãn</option>
+                  <option value="">🌐 Tất cả trạng thái kho WMS (Đã nộp, Dán nhãn, Xuất kho) [Khuyên dùng cho Best Express & đơn mới]</option>
+                  <option value="8">🚚 Chỉ đơn Đã xuất kho (Trạng thái Shipper - Mã 8)</option>
+                  <option value="4">Đã nộp (Chờ xử lý xuất - Mã 4)</option>
+                  <option value="7">Đã dán nhãn (Mã 7)</option>
                   <option value="5">Đã hạ kệ</option>
                   <option value="2">Đã xác nhận</option>
                   <option value="0">⚠️ Đã xóa (Đơn sàn/khách đã hủy)</option>
