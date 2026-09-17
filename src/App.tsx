@@ -13,6 +13,7 @@ import { OrderDetailModal } from './components/OrderDetailModal';
 import { CarrierGuideModal } from './components/CarrierGuideModal';
 import { YunWMSSyncModal } from './components/YunWMSSyncModal';
 import { JNTMultiTrackModal } from './components/JNTMultiTrackModal';
+import { BestMultiTrackModal } from './components/BestMultiTrackModal';
 import { AutoSyncBar, getEffectiveCarrierInfo } from './components/AutoSyncBar';
 import { BatchStats, CarrierId, OrderItem, TrackingProgressMetrics, TrackingStatusCategory } from './types/tracking';
 import { createOrderItem, trackSingleOrder, trackBatchOrders, clearTrackingCache } from './services/trackingService';
@@ -36,6 +37,7 @@ export default function App() {
   const [showGuide, setShowGuide] = useState(false);
   const [showYunWMSModal, setShowYunWMSModal] = useState(false);
   const [showJNT10Modal, setShowJNT10Modal] = useState(false);
+  const [showBest20Modal, setShowBest20Modal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [trackingMetrics, setTrackingMetrics] = useState<TrackingProgressMetrics | null>(null);
   const [activeScanScope, setActiveScanScope] = useState<'all' | '3days' | '7days' | '14days' | 'unscanned'>('all');
@@ -1158,6 +1160,7 @@ export default function App() {
             onRetryUnscanned={handleRetryUnscanned}
             onTrackSelected={(selectedOrders) => startBatchExecution(selectedOrders, 'all')}
             onOpenJNT10Modal={() => setShowJNT10Modal(true)}
+            onOpenBest20Modal={() => setShowBest20Modal(true)}
             isProcessing={isProcessing}
             defaultJtPhone={jtPhoneSuffix}
           />
@@ -1197,6 +1200,51 @@ export default function App() {
         onImportOrders={handleAppendImport}
         existingJtCodes={orders.filter(o => o.carrier === 'jt').map(o => o.trackingCode)}
         defaultPhone={jtPhoneSuffix}
+      />
+
+      {/* Best Express 20-Orders Multi-Tracking Modal */}
+      <BestMultiTrackModal
+        isOpen={showBest20Modal}
+        onClose={() => setShowBest20Modal(false)}
+        onToast={showToast}
+        orders={orders}
+        onUpdateOrdersStatus={(codes, status, rawText, detail) => {
+          const codeSet = new Set(codes.map(c => c.trim().toUpperCase()));
+          const nowStr = new Intl.DateTimeFormat('vi-VN', {
+            timeZone: 'Asia/Ho_Chi_Minh',
+            hour: '2-digit', minute: '2-digit', second: '2-digit',
+            day: '2-digit', month: '2-digit', year: 'numeric'
+          }).format(new Date());
+
+          setOrders(prev => {
+            const next = prev.map(o => {
+              if (codeSet.has(o.trackingCode.toUpperCase())) {
+                return {
+                  ...o,
+                  statusCategory: status,
+                  rawStatusText: rawText,
+                  statusDetail: detail,
+                  scannedAt: o.scannedAt || nowStr,
+                  updatedAt: nowStr,
+                  timeline: [
+                    {
+                      time: nowStr,
+                      statusText: rawText,
+                      location: 'Best Express',
+                      description: detail
+                    },
+                    ...(o.timeline || [])
+                  ]
+                };
+              }
+              return o;
+            });
+            saveOrdersToStorage(next);
+            upsertOrdersToSql(next).catch(() => {});
+            return next;
+          });
+          showToast(`✅ Đã cập nhật ${codes.length} đơn Best Express sang: ${rawText}!`);
+        }}
       />
 
       {/* Footer */}

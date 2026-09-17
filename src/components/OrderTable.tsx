@@ -30,6 +30,7 @@ interface OrderTableProps {
   onRetryUnscanned?: () => void;
   onTrackSelected?: (selectedOrders: OrderItem[]) => void;
   onOpenJNT10Modal?: () => void;
+  onOpenBest20Modal?: () => void;
   isProcessing?: boolean;
   defaultJtPhone?: string;
 }
@@ -41,6 +42,7 @@ export const OrderTable: React.FC<OrderTableProps> = ({
   onRetryUnscanned,
   onTrackSelected,
   onOpenJNT10Modal,
+  onOpenBest20Modal,
   isProcessing,
   defaultJtPhone = '8836'
 }) => {
@@ -397,16 +399,30 @@ export const OrderTable: React.FC<OrderTableProps> = ({
           )}
         </div>
 
-        {onOpenJNT10Modal && (
-          <button
-            type="button"
-            onClick={onOpenJNT10Modal}
-            className="inline-flex items-center px-2.5 py-1 text-xs font-bold rounded-lg text-rose-900 bg-rose-100 hover:bg-rose-200 border border-rose-300 transition-colors cursor-pointer shadow-2xs"
-          >
-            <span className="w-2 h-2 rounded-full bg-rose-600 mr-1.5" />
-            Bộ tra cứu 10 đơn J&T
-          </button>
-        )}
+        <div className="flex items-center space-x-2">
+          {onOpenBest20Modal && hasBestInList && (
+            <button
+              type="button"
+              onClick={onOpenBest20Modal}
+              className="inline-flex items-center px-2.5 py-1 text-xs font-bold rounded-lg text-blue-950 bg-blue-100 hover:bg-blue-200 border border-blue-300 transition-colors cursor-pointer shadow-2xs"
+              title="Mở bộ tra cứu tích hợp 20 đơn Best Express (Xoay Captcha 1 lần duy nhất ngay trong app)"
+            >
+              <span className="w-2 h-2 rounded-full bg-[#0055A5] mr-1.5" />
+              Bộ tra cứu 20 đơn Best Express
+            </button>
+          )}
+
+          {onOpenJNT10Modal && (
+            <button
+              type="button"
+              onClick={onOpenJNT10Modal}
+              className="inline-flex items-center px-2.5 py-1 text-xs font-bold rounded-lg text-rose-900 bg-rose-100 hover:bg-rose-200 border border-rose-300 transition-colors cursor-pointer shadow-2xs"
+            >
+              <span className="w-2 h-2 rounded-full bg-rose-600 mr-1.5" />
+              Bộ tra cứu 10 đơn J&T
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Sticky Selection Top Action Bar when items selected */}
