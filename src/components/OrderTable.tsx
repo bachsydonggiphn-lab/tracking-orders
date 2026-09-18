@@ -30,7 +30,7 @@ interface OrderTableProps {
   onRetryUnscanned?: () => void;
   onTrackSelected?: (selectedOrders: OrderItem[]) => void;
   onOpenJNT10Modal?: () => void;
-  onOpenBest20Modal?: () => void;
+  onOpenBest20Modal?: (codes?: string[]) => void;
   isProcessing?: boolean;
   defaultJtPhone?: string;
 }
@@ -142,9 +142,13 @@ export const OrderTable: React.FC<OrderTableProps> = ({
       return;
     }
     const targetCodes = selectedBestOrders.slice(0, 20).map(o => o.trackingCode);
-    const url = getBestMultiTrackingUrl(targetCodes);
-    window.open(url, '_blank');
-    onToast(`Đang mở tra cứu ${targetCodes.length} đơn Best Express (Xoay Captcha đúng 1 lần cho cả 20 đơn)...`);
+    if (onOpenBest20Modal) {
+      onOpenBest20Modal(targetCodes);
+    } else {
+      const url = getBestMultiTrackingUrl(targetCodes);
+      window.open(url, '_blank');
+      onToast(`Đang mở tra cứu ${targetCodes.length} đơn Best Express (Xoay Captcha đúng 1 lần cho cả 20 đơn)...`);
+    }
   };
 
   // Open 10 consecutive J&T orders starting from this row
@@ -180,9 +184,13 @@ export const OrderTable: React.FC<OrderTableProps> = ({
       }
     }
 
-    const url = getBestMultiTrackingUrl(bestCodes);
-    window.open(url, '_blank');
-    onToast(`Đang mở ${bestCodes.length} đơn Best Express trên web hãng (Chỉ cần xoay Captcha 1 lần)...`);
+    if (onOpenBest20Modal) {
+      onOpenBest20Modal(bestCodes);
+    } else {
+      const url = getBestMultiTrackingUrl(bestCodes);
+      window.open(url, '_blank');
+      onToast(`Đang mở ${bestCodes.length} đơn Best Express trên web hãng (Chỉ cần xoay Captcha 1 lần)...`);
+    }
   };
 
   const handleCopySelectedCodes = async () => {

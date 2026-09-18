@@ -21,6 +21,7 @@ interface BestMultiTrackModalProps {
   onClose: () => void;
   onToast: (msg: string) => void;
   orders: OrderItem[];
+  initialCodes?: string[];
   onUpdateOrdersStatus?: (
     orderCodes: string[], 
     newStatus: TrackingStatusCategory, 
@@ -34,6 +35,7 @@ export const BestMultiTrackModal: React.FC<BestMultiTrackModalProps> = ({
   onClose,
   onToast,
   orders,
+  initialCodes,
   onUpdateOrdersStatus
 }) => {
   // Extract all Best Express orders from current system
@@ -48,16 +50,22 @@ export const BestMultiTrackModal: React.FC<BestMultiTrackModalProps> = ({
     return target.slice(0, 20).map(o => o.trackingCode);
   }, [bestOrders]);
 
-  const [activeCodes, setActiveCodes] = useState<string[]>(defaultCodes);
+  const [activeCodes, setActiveCodes] = useState<string[]>(
+    initialCodes && initialCodes.length > 0 ? initialCodes : defaultCodes
+  );
   const [copiedCodes, setCopiedCodes] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
 
-  // Sync activeCodes when defaultCodes change or modal opens
+  // Sync activeCodes when initialCodes or defaultCodes change or modal opens
   React.useEffect(() => {
-    if (isOpen && defaultCodes.length > 0) {
-      setActiveCodes(defaultCodes);
+    if (isOpen) {
+      if (initialCodes && initialCodes.length > 0) {
+        setActiveCodes(initialCodes);
+      } else if (defaultCodes.length > 0) {
+        setActiveCodes(defaultCodes);
+      }
     }
-  }, [isOpen, defaultCodes]);
+  }, [isOpen, initialCodes, defaultCodes]);
 
   if (!isOpen) return null;
 

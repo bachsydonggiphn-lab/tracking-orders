@@ -38,6 +38,7 @@ export default function App() {
   const [showYunWMSModal, setShowYunWMSModal] = useState(false);
   const [showJNT10Modal, setShowJNT10Modal] = useState(false);
   const [showBest20Modal, setShowBest20Modal] = useState(false);
+  const [best20InitialCodes, setBest20InitialCodes] = useState<string[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [trackingMetrics, setTrackingMetrics] = useState<TrackingProgressMetrics | null>(null);
   const [activeScanScope, setActiveScanScope] = useState<'all' | '3days' | '7days' | '14days' | 'unscanned'>('all');
@@ -1193,7 +1194,10 @@ export default function App() {
             onRetryUnscanned={handleRetryUnscanned}
             onTrackSelected={(selectedOrders) => startBatchExecution(selectedOrders, 'all')}
             onOpenJNT10Modal={() => setShowJNT10Modal(true)}
-            onOpenBest20Modal={() => setShowBest20Modal(true)}
+            onOpenBest20Modal={(codes) => {
+              setBest20InitialCodes(codes && codes.length > 0 ? codes : []);
+              setShowBest20Modal(true);
+            }}
             isProcessing={isProcessing}
             defaultJtPhone={jtPhoneSuffix}
           />
@@ -1239,9 +1243,13 @@ export default function App() {
       {/* Best Express 20-Orders Multi-Tracking Modal */}
       <BestMultiTrackModal
         isOpen={showBest20Modal}
-        onClose={() => setShowBest20Modal(false)}
+        onClose={() => {
+          setShowBest20Modal(false);
+          setBest20InitialCodes([]);
+        }}
         onToast={showToast}
         orders={orders}
+        initialCodes={best20InitialCodes}
         onUpdateOrdersStatus={(codes, status, rawText, detail) => {
           const codeSet = new Set(codes.map(c => c.trim().toUpperCase()));
           const nowStr = new Intl.DateTimeFormat('vi-VN', {
