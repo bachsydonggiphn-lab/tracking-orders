@@ -65,6 +65,7 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
   const [isCustomDate, setIsCustomDate] = useState<boolean>(false);
   const [customDateFor, setCustomDateFor] = useState<string>('');
   const [customDateTo, setCustomDateTo] = useState<string>('');
+  const [searchDateType, setSearchDateType] = useState<string>('createDate'); // createDate, shipTime, printTime, packTime, syncWmsTime
   const [customerCode, setCustomerCode] = useState<string>(''); // YD or all
   const [orderStatus, setOrderStatus] = useState<string>(''); // Mặc định tất cả trạng thái kho (để không bỏ sót đơn Đã nộp 4, Dán nhãn 7 của Best Express)
   const [threads, setThreads] = useState<number>(20); // Multi-threading concurrency (default 20 workers)
@@ -282,42 +283,50 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
     const yesterdayDate = new Date(now.getTime() - oneDayMs);
     const yesterdayStr = vnFormatter.format(yesterdayDate);
     const todayStr = vnFormatter.format(now);
+    const dateTypeNote = `[${searchDateType === 'createDate' ? 'Tạo đơn' : searchDateType === 'shipTime' ? 'Xuất kho' : searchDateType === 'printTime' ? 'In phiếu' : searchDateType === 'packTime' ? 'Đóng gói' : 'Đồng bộ WMS'}]`;
 
     if (isCustomDate) {
       if (customDateFor && customDateTo) {
-        return `Tùy chọn: từ ${customDateFor} đến ${customDateTo} ${excludeToday ? `(Đã trừ hôm nay ${todayStr})` : `(⚡ Đến hiện tại ${todayStr} ${currentTimeStr})`}`;
+        if (customDateFor === customDateTo) {
+          return `${dateTypeNote} Trọn vẹn ngày ${customDateFor} (từ 00:00 đến 23:59)`;
+        }
+        return `${dateTypeNote} Từ ${customDateFor} 00:00 đến ${customDateTo} 23:59 ${excludeToday ? `(Đã trừ hôm nay ${todayStr})` : `(⚡ Đến hiện tại ${todayStr} ${currentTimeStr})`}`;
+      } else if (customDateFor) {
+        return `${dateTypeNote} Trọn vẹn ngày ${customDateFor} (từ 00:00 đến 23:59)`;
       }
-      return 'Tùy chọn khoảng ngày (Vui lòng điền Từ ngày - Đến ngày)';
+      return `${dateTypeNote} Tùy chọn khoảng ngày (Vui lòng điền Từ ngày - Đến ngày)`;
     }
 
     if (!dateInterval) {
       return excludeToday
-        ? `Toàn bộ quá khứ đến hết ngày hôm qua (${yesterdayStr}) - Không kéo đơn hôm nay`
-        : `⚡ Toàn bộ đơn Shipper từ trước đến đúng hiện tại (${todayStr} ${currentTimeStr}) - Không trừ ngày!`;
+        ? `${dateTypeNote} Toàn bộ quá khứ đến hết ngày hôm qua (${yesterdayStr}) - Không kéo đơn hôm nay`
+        : `${dateTypeNote} ⚡ Toàn bộ đơn Shipper từ trước đến đúng hiện tại (${todayStr} ${currentTimeStr}) - Không trừ ngày!`;
     }
 
     const days = parseInt(dateInterval, 10);
-    if (isNaN(days) || days <= 0) return 'Toàn bộ đơn hàng';
+    if (isNaN(days) || days <= 0) return `${dateTypeNote} Toàn bộ đơn hàng`;
 
     if (excludeToday) {
       const pastMs = now.getTime() - (days * oneDayMs);
       const fromStr = vnFormatter.format(new Date(pastMs));
-      return `${days} ngày: từ ${fromStr} đến hôm qua ${yesterdayStr} (Đã trừ hôm nay ${todayStr})`;
+      return `${dateTypeNote} ${days} ngày: từ ${fromStr} đến hôm qua ${yesterdayStr} (Đã trừ hôm nay ${todayStr})`;
     } else {
       if (days === 1) {
-        return `⚡ Hôm nay: Quét thời gian thực toàn bộ đơn Shipper xuất kho hôm nay (${todayStr}) tính đến ${currentTimeStr}!`;
+        return `${dateTypeNote} ⚡ Hôm nay: Quét thời gian thực toàn bộ đơn hôm nay (${todayStr}) tính đến ${currentTimeStr}!`;
       }
       const pastMs = now.getTime() - (days - 1) * oneDayMs;
       const fromStr = vnFormatter.format(new Date(pastMs));
-      return `⚡ ${days} ngày gần nhất: từ ${fromStr} đến hiện tại (${todayStr} ${currentTimeStr}) - Bao gồm đơn hôm nay!`;
+      return `${dateTypeNote} ⚡ ${days} ngày gần nhất: từ ${fromStr} đến hiện tại (${todayStr} ${currentTimeStr}) - Bao gồm đơn hôm nay!`;
     }
   };
 
   const handleStartSync = async () => {
-    if (isCustomDate && (!customDateFor || !customDateTo)) {
-      onToast('Vui lòng chọn đầy đủ Từ ngày và Đến ngày!');
+    if (isCustomDate && !customDateFor) {
+      onToast('Vui lòng chọn ngày cần cào!');
       return;
     }
+
+    const effectiveCustomDateTo = customDateTo || customDateFor;
 
     setIsLoading(true);
     setTestMessage('');
@@ -351,7 +360,8 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
           warehouseId,
           dateInterval: isCustomDate ? '' : dateInterval,
           dateFor: isCustomDate ? customDateFor : '',
-          dateTo: isCustomDate ? customDateTo : '',
+          dateTo: isCustomDate ? effectiveCustomDateTo : '',
+          searchDateType,
           customerCode: customerCode.trim(),
           orderStatus,
           concurrency: threads,
@@ -1032,14 +1042,30 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
 
           {/* Quick Date Presets & Custom Date Range */}
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2.5">
-            <div className="flex items-center justify-between">
+            {/* Header + Date Type Selector */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1 border-b border-slate-200/80">
               <span className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center font-mono">
                 <Calendar className="w-3.5 h-3.5 mr-1.5 text-slate-600" />
                 Khoảng Thời Gian Quét {!excludeToday ? '(Thời Gian Thực)' : '(-1 Ngày)'}
               </span>
-              <span className="text-[11px] text-emerald-700 font-bold bg-emerald-100/70 px-2 py-0.5 rounded">
-                {!excludeToday ? '⚡ Đến thời điểm hiện tại' : '📅 Đến hết hôm qua'}
-              </span>
+              
+              {/* Selector for searchDateType (Order creation time, Shipping time, etc.) */}
+              <div className="flex items-center space-x-1.5 bg-white border border-slate-300 rounded-lg px-2.5 py-1 shadow-2xs">
+                <span className="text-[11px] font-bold text-slate-700 font-mono shrink-0">Date：</span>
+                <select
+                  name="searchDateType"
+                  id="searchDateType"
+                  value={searchDateType}
+                  onChange={(e) => setSearchDateType(e.target.value)}
+                  className="text-xs font-bold text-slate-900 bg-transparent border-none focus:outline-none cursor-pointer"
+                >
+                  <option value="createDate">Order creation time (Thời gian tạo đơn - Mặc định)</option>
+                  <option value="shipTime">Shipping time (Thời gian xuất kho)</option>
+                  <option value="printTime">Print time (Thời gian in phiếu)</option>
+                  <option value="packTime">Packing time (Thời gian đóng gói)</option>
+                  <option value="syncWmsTime">Synchronization Time (Thời gian đồng bộ WMS)</option>
+                </select>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-7 gap-1.5">
@@ -1150,28 +1176,52 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
 
             {/* Custom Date Inputs if selected */}
             {isCustomDate && (
-              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-200">
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                    Từ ngày (Date From)
-                  </label>
-                  <input
-                    type="date"
-                    value={customDateFor}
-                    onChange={(e) => setCustomDateFor(e.target.value)}
-                    className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                  />
+              <div className="space-y-2 pt-1 border-t border-slate-200">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                      Từ ngày (Date From - dateFor)
+                    </label>
+                    <input
+                      type="date"
+                      name="dateFor"
+                      id="dateFor"
+                      value={customDateFor}
+                      onChange={(e) => setCustomDateFor(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                      Đến ngày (Date To - dateTo)
+                    </label>
+                    <input
+                      type="date"
+                      name="dateTo"
+                      id="dateTo"
+                      value={customDateTo}
+                      onChange={(e) => setCustomDateTo(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                    Đến ngày (Date To)
-                  </label>
-                  <input
-                    type="date"
-                    value={customDateTo}
-                    onChange={(e) => setCustomDateTo(e.target.value)}
-                    className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                  />
+
+                {/* 1-click single day button */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (customDateFor) {
+                        setCustomDateTo(customDateFor);
+                      }
+                    }}
+                    className="text-[11px] text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded cursor-pointer font-semibold"
+                  >
+                    🎯 Quét trọn ngày {customDateFor || '(chọn Từ ngày)'} (00:00 - 23:59)
+                  </button>
+                  <span className="text-[10px] text-slate-500 italic">
+                    Tự động kéo trọn vẹn từ 00:00 đến 23:59 để số lượng khớp 100% với cổng WMS.
+                  </span>
                 </div>
               </div>
             )}
@@ -1402,8 +1452,8 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
                   onChange={(e) => setOrderStatus(e.target.value)}
                   className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-slate-900"
                 >
-                  <option value="">🌐 Tất cả trạng thái kho WMS (Đã nộp, Dán nhãn, Xuất kho) [Khuyên dùng cho Best Express & đơn mới]</option>
-                  <option value="8">🚚 Chỉ đơn Đã xuất kho (Trạng thái Shipper - Mã 8)</option>
+                  <option value="8">🚚 Chỉ đơn Đã xuất kho (Trạng thái Shipper / Shipped - Mã 8) [Khớp 100% cột Status Shipped trên WMS, VD: 1.453 đơn]</option>
+                  <option value="">🌐 Tất cả trạng thái kho WMS (Đã nộp, Dán nhãn, Xuất kho) [Toàn bộ đơn kho]</option>
                   <option value="4">Đã nộp (Chờ xử lý xuất - Mã 4)</option>
                   <option value="7">Đã dán nhãn (Mã 7)</option>
                   <option value="5">Đã hạ kệ</option>

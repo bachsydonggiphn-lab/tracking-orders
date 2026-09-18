@@ -72,8 +72,50 @@ export async function initSqliteDb(): Promise<void> {
 
     // Migrate from legacy orders_state.json if database is currently empty
     await tryAutoMigrateFromJson(db);
-  } catch (err) {
-    console.error("[Database Init Error]", err);
+  } catch (err: any) {
+    if (err?.code === 'BLOCKED' || String(err?.message || '').includes('BLOCKED')) {
+      console.warn(`[Database Warning] Turso Cloud quota bị chặn (${err.message}). Tự động chuyển sang SQLite Local: ${DB_PATH}`);
+      try {
+        if (!fs.existsSync(DATA_DIR)) {
+          fs.mkdirSync(DATA_DIR, { recursive: true });
+        }
+        clientInstance = createClient({
+          url: `file:${DB_PATH}`
+        });
+        const localDb = clientInstance;
+        await localDb.execute(`
+          CREATE TABLE IF NOT EXISTS orders (
+            id TEXT PRIMARY KEY,
+            tracking_code TEXT UNIQUE NOT NULL,
+            order_no TEXT,
+            carrier TEXT NOT NULL,
+            carrier_channel TEXT,
+            status_category TEXT NOT NULL,
+            raw_status_text TEXT,
+            status_detail TEXT,
+            scanned_at TEXT,
+            updated_at TEXT,
+            order_created_at TEXT,
+            customer_name TEXT,
+            customer_phone TEXT,
+            warehouse_id TEXT,
+            warehouse_name TEXT,
+            source TEXT,
+            payload_json TEXT NOT NULL
+          );
+        `);
+        await localDb.execute("CREATE INDEX IF NOT EXISTS idx_orders_tracking_code ON orders(tracking_code);");
+        await localDb.execute("CREATE INDEX IF NOT EXISTS idx_orders_carrier ON orders(carrier);");
+        await localDb.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status_category);");
+        await localDb.execute("CREATE INDEX IF NOT EXISTS idx_orders_updated_at ON orders(updated_at);");
+        isInitialized = true;
+        await tryAutoMigrateFromJson(localDb);
+      } catch (e) {
+        console.error("[Local SQLite Fallback Error]", e);
+      }
+    } else {
+      console.error("[Database Init Error]", err);
+    }
   }
 }
 

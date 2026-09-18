@@ -2206,35 +2206,55 @@ export function computeYunWMSDateRange(
   const todayStr = vnFormatter.format(now);
   const oneDayMs = 24 * 60 * 60 * 1000;
   const yesterdayStr = vnFormatter.format(new Date(now.getTime() - oneDayMs));
+  const effectiveSearchDateType = searchDateType || 'createDate';
 
-  if (customDateFor && customDateTo) {
-    let finalTo = customDateTo.trim();
-    if (excludeToday && finalTo >= todayStr) {
-      finalTo = yesterdayStr;
+  const formatStartDay = (d: string) => {
+    const trimmed = (d || '').trim();
+    if (!trimmed) return '';
+    return trimmed.includes(':') ? trimmed : `${trimmed} 00:00`;
+  };
+  const formatEndDay = (d: string) => {
+    const trimmed = (d || '').trim();
+    if (!trimmed) return '';
+    return trimmed.includes(':') ? trimmed : `${trimmed} 23:59`;
+  };
+
+  if (customDateFor) {
+    let rawFrom = customDateFor.trim();
+    let rawTo = (customDateTo || '').trim();
+
+    // If customDateTo is empty or equal to customDateFor (user selected a single day like day 17)
+    if (!rawTo) {
+      rawTo = rawFrom;
     }
+
+    if (excludeToday && rawTo >= todayStr) {
+      rawTo = yesterdayStr;
+    }
+
     return {
-      dateFor: customDateFor.trim(),
-      dateTo: finalTo,
-      searchDateType: searchDateType || 'createDate'
+      dateFor: formatStartDay(rawFrom),
+      dateTo: formatEndDay(rawTo),
+      searchDateType: effectiveSearchDateType
     };
   }
 
   if (excludeToday) {
-    // Exclude today: dateTo is always yesterdayStr (shipper -1 ngày)
+    // Exclude today: dateTo is always yesterdayStr 23:59 (shipper -1 ngày)
     if (!dateInterval || dateInterval === 'all' || dateInterval === '0') {
       return {
-        dateFor: '2020-01-01',
-        dateTo: yesterdayStr,
-        searchDateType: searchDateType || 'createDate'
+        dateFor: '2020-01-01 00:00',
+        dateTo: `${yesterdayStr} 23:59`,
+        searchDateType: effectiveSearchDateType
       };
     }
 
     const days = parseInt(dateInterval, 10);
     if (isNaN(days) || days <= 0) {
       return {
-        dateFor: '2020-01-01',
-        dateTo: yesterdayStr,
-        searchDateType: searchDateType || 'createDate'
+        dateFor: '2020-01-01 00:00',
+        dateTo: `${yesterdayStr} 23:59`,
+        searchDateType: effectiveSearchDateType
       };
     }
 
@@ -2242,9 +2262,9 @@ export function computeYunWMSDateRange(
     const pastMs = now.getTime() - (days * oneDayMs);
     const fromStr = vnFormatter.format(new Date(pastMs));
     return {
-      dateFor: fromStr,
-      dateTo: yesterdayStr,
-      searchDateType: searchDateType || 'createDate'
+      dateFor: `${fromStr} 00:00`,
+      dateTo: `${yesterdayStr} 23:59`,
+      searchDateType: effectiveSearchDateType
     };
   }
 
@@ -2261,9 +2281,9 @@ export function computeYunWMSDateRange(
   const fromStr = vnFormatter.format(new Date(pastMs));
 
   return {
-    dateFor: fromStr,
-    dateTo: todayStr,
-    searchDateType: searchDateType || 'createDate'
+    dateFor: `${fromStr} 00:00`,
+    dateTo: `${todayStr} 23:59`,
+    searchDateType: effectiveSearchDateType
   };
 }
 
@@ -2382,6 +2402,10 @@ async function fetchYunWMSOrdersList({
       wmsStatus: WMS_STATUS_MAP[wmsStatusCode] || `Trạng thái ${wmsStatusCode}`,
       wmsStatusCode,
       createDate: item.warehouse_E14 || item.E14 || '',
+      shipTime: item.warehouse_ship_time || item.ship_time || '',
+      packTime: item.warehouse_pack_time || item.pack_time || '',
+      printTime: item.process_time || '',
+      syncWmsTime: item.sync_owms_time || '',
       productsCount: Array.isArray(item.productList) ? item.productList.length : 1,
       buyersMessage: item.buyers_message || '',
       country: item.E23 || 'VN'
@@ -2400,8 +2424,8 @@ async function fetchYunWMSOrdersList({
       return false;
     }
 
-    // 2. Filter: Loại trừ đơn hôm nay (chỉ kéo từ hôm qua trở về quá khứ)
-    if (excludeToday) {
+    // 2. Filter: Loại trừ đơn hôm nay (chỉ khi dùng chế độ preset excludeToday và không phải customDate)
+    if (excludeToday && !dateFor && !dateTo) {
       const orderDate = (order.createDate || '').trim();
       if (orderDate.startsWith(todayStr4) || orderDate.startsWith(todayStr2)) {
         return false;
@@ -2593,6 +2617,7 @@ async function startServer() {
         dateInterval = "3",
         dateFor = "",
         dateTo = "",
+        searchDateType = "createDate",
         customerCode = "",
         orderStatus = "",
         warehouseId = "7",
@@ -2612,6 +2637,7 @@ async function startServer() {
         dateInterval,
         dateFor,
         dateTo,
+        searchDateType,
         customerCode,
         orderStatus,
         warehouseId: req.body.E4 !== undefined ? req.body.E4 : warehouseId,
@@ -2639,6 +2665,7 @@ async function startServer() {
         dateInterval = "7",
         dateFor = "",
         dateTo = "",
+        searchDateType = "createDate",
         customerCode = "",
         orderStatus = "",
         warehouseId = "7",
@@ -2671,6 +2698,7 @@ async function startServer() {
           dateInterval,
           dateFor,
           dateTo,
+          searchDateType,
           customerCode,
           orderStatus,
           warehouseId: effectiveWarehouseId,
@@ -2744,6 +2772,7 @@ async function startServer() {
         dateInterval = "7",
         dateFor = "",
         dateTo = "",
+        searchDateType = "createDate",
         customerCode = "",
         orderStatus = "",
         warehouseId = "7",
@@ -2772,6 +2801,7 @@ async function startServer() {
         dateInterval,
         dateFor,
         dateTo,
+        searchDateType,
         customerCode,
         orderStatus,
         warehouseId: effectiveWarehouseId,
@@ -2842,6 +2872,7 @@ async function startServer() {
                 dateInterval,
                 dateFor,
                 dateTo,
+                searchDateType,
                 customerCode,
                 orderStatus,
                 warehouseId: effectiveWarehouseId,
