@@ -2228,10 +2228,8 @@ export function computeYunWMSDateRange(
       rawTo = rawFrom;
     }
 
-    if (excludeToday && rawTo >= todayStr) {
-      rawTo = yesterdayStr;
-    }
-
+    // When user explicitly provides a custom date range, ALWAYS respect their chosen dates
+    // Do not alter or truncate rawTo with yesterdayStr!
     return {
       dateFor: formatStartDay(rawFrom),
       dateTo: formatEndDay(rawTo),
@@ -2622,8 +2620,8 @@ async function startServer() {
         orderStatus = "",
         warehouseId = "7",
         searchCode = "",
-        only8623AndSpxvn = true,
-        excludeToday = true,
+        only8623AndSpxvn = false,
+        excludeToday = false,
         carrierFilterMode = "",
         selectedCarriers = [],
         customPrefixes = []
@@ -2670,8 +2668,8 @@ async function startServer() {
         orderStatus = "",
         warehouseId = "7",
         searchCode = "",
-        only8623AndSpxvn = true,
-        excludeToday = true,
+        only8623AndSpxvn = false,
+        excludeToday = false,
         carrierFilterMode = "",
         selectedCarriers = [],
         customPrefixes = []
@@ -2779,8 +2777,8 @@ async function startServer() {
         searchCode = "",
         concurrency = 20,
         pageSize = 100,
-        only8623AndSpxvn = true,
-        excludeToday = true,
+        only8623AndSpxvn = false,
+        excludeToday = false,
         carrierFilterMode = "",
         selectedCarriers = [],
         customPrefixes = []

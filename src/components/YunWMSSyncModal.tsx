@@ -1243,7 +1243,7 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
 
             {/* Explanation box */}
             <div className="text-[11px] text-slate-600 bg-white/90 p-2.5 rounded-lg border border-amber-200 leading-relaxed shadow-2xs">
-              💡 <strong>Cơ chế khớp 100% WMS:</strong> Khi chọn ngày <strong>{customDateFor || '17'}</strong>, hệ thống tự động thiết lập phạm vi thời gian từ <code>{customDateFor || '2026-09-17'} 00:00</code> đến <code>{customDateTo || customDateFor || '2026-09-17'} 23:59</code> theo tiêu chí <strong>{searchDateType}</strong>. Kết quả cào về sẽ khớp chính xác với cổng WMS czwh.wms.yunwms.com (đúng <strong>1.453 đơn</strong> đối với trạng thái Shipped).
+              💡 <strong>Cơ chế đồng bộ thời gian thực:</strong> Khi chọn ngày <strong>{customDateFor || todayStr}</strong>, hệ thống tự động thiết lập phạm vi thời gian từ <code>{customDateFor || todayStr} 00:00</code> đến <code>{customDateTo || customDateFor || todayStr} 23:59</code> theo tiêu chí <strong>{searchDateType}</strong>. Kết quả cào về kết nối trực tiếp đến máy chủ <code>czwh.wms.yunwms.com</code> để kéo 100% đơn hàng thực tế của kho (không giới hạn, cập nhật theo từng giây).
             </div>
             {/* Real-time date range summary badge */}
             <div className="text-[11px] font-medium text-emerald-900 bg-emerald-50 border border-emerald-200/80 px-2.5 py-1.5 rounded-lg flex items-center justify-between">
