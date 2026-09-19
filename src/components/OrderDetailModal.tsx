@@ -409,12 +409,22 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
                     minute: '2-digit',
                     second: '2-digit'
                   }).format(new Date());
+                  const confirmedTimeline = (order.timeline && order.timeline.length > 0) ? order.timeline : [
+                    {
+                      time: nowStr,
+                      statusText: 'Đã lấy hàng - Bưu tá J&T đã nhận kiện',
+                      location: 'Bưu cục tiếp nhận J&T Express',
+                      description: 'Kiện hàng đã được bưu tá nhận và đang chuyển phát qua mạng lưới (Đã xác nhận theo App bưu tá)'
+                    }
+                  ];
+                  setTimeline(confirmedTimeline);
                   onUpdateOrder({
                     ...order,
                     statusCategory: 'scanned',
                     rawStatusText: 'Đã lấy hàng - Bưu tá J&T đã nhận kiện',
                     statusDetail: 'Bưu tá đã lấy hàng và kiện đang luân chuyển trên mạng lưới J&T Express',
-                    scannedAt: order.scannedAt || nowStr
+                    scannedAt: order.scannedAt || nowStr,
+                    timeline: confirmedTimeline
                   });
                   onToast(`Đã chuyển đơn ${order.trackingCode} sang ĐÃ SCAN!`);
                 }}
@@ -505,9 +515,16 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
                 <RefreshCw className="w-4 h-4 animate-spin mb-1.5" />
                 <span>Đang tải lộ trình chi tiết từ SQL...</span>
               </div>
-            ) : timeline && timeline.length > 0 ? (
+            ) : (timeline && timeline.length > 0) || effectiveStatus.statusCategory !== 'not_scanned' ? (
               <div className="relative pl-6 space-y-4 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
-                {timeline.map((event, i) => (
+                {((timeline && timeline.length > 0) ? timeline : [
+                  {
+                    time: effectiveStatus.scannedAt || order.scannedAt || order.updatedAt || 'Vừa xác nhận',
+                    statusText: effectiveStatus.rawStatusText || 'Đã lấy hàng - Bưu tá đã nhận kiện',
+                    location: effectiveStatus.statusDetail?.includes('Bưu cục:') ? effectiveStatus.statusDetail : 'Mạng lưới vận chuyển (Đang trung chuyển)',
+                    description: effectiveStatus.statusDetail || 'Kiện hàng đã được bưu tá nhận và đang luân chuyển qua mạng lưới bưu cục phát.'
+                  }
+                ]).map((event, i) => (
                   <div key={i} className="relative group">
                     {/* Timeline Node */}
                     <div className={`absolute -left-6 top-1 w-4 h-4 rounded-full border-2 bg-white flex items-center justify-center ${
@@ -518,12 +535,11 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
 
                     <div className="space-y-0.5">
                       <div className="flex items-center space-x-2">
-                        <span className="text-[11px] font-mono font-semibold text-slate-500">
+                        <span className="text-[11px] font-mono font-bold text-slate-900">
                           {event.time}
                         </span>
                         {event.location && (
-                          <span className="inline-flex items-center text-[11px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded font-medium">
-                            <MapPin className="w-2.5 h-2.5 mr-0.5 text-slate-400" />
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-slate-100 text-slate-600">
                             {event.location}
                           </span>
                         )}
@@ -543,8 +559,11 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
                 ))}
               </div>
             ) : (
-              <div className="text-center py-6 text-xs text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
-                Chưa có dữ liệu hành trình chi tiết
+              <div className="text-center py-6 px-4 text-xs text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200 space-y-1">
+                <div className="font-semibold text-slate-700">Chưa có dữ liệu hành trình chi tiết từ cổng Web J&T</div>
+                <div className="text-[11px] text-slate-500 max-w-md mx-auto">
+                  Cổng Web J&T bảo mật dữ liệu các trạm xe trung chuyển: Hãy nhập <strong>4 số cuối SĐT Người Nhận</strong> vào ô trên và bấm <strong>Quét lại</strong>, hoặc bấm nút <strong>Xác nhận ĐÃ SCAN</strong> nếu đã thấy kiện di chuyển trên App bưu tá.
+                </div>
               </div>
             )}
           </div>
