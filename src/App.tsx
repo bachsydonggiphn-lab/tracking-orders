@@ -21,7 +21,7 @@ import { detectCarrier, getDirectTrackingUrl } from './services/carrierDetector'
 import { getStatusLabel } from './services/exportService';
 import { isOrderWithinDays, getOrderAgeInfo } from './utils/dateFilter';
 import { getInitialOrdersSync, loadIndexedDBOrders, loadPersistedOrders, saveOrdersDebounced, saveOrdersToStorage, clearPersistedOrders, normalizeOrderList, upsertOrdersToSql } from './utils/orderStorage';
-import { fetchGaplessWMSOrders, fetchLatestWMSOrders } from './utils/wmsOrderUtils';
+import { fetchGaplessWMSOrders, fetchLatestWMSOrders, convertRawWmsToOrderItems } from './utils/wmsOrderUtils';
 import { CheckCircle, AlertCircle, Info } from 'lucide-react';
 
 export default function App() {
@@ -881,6 +881,90 @@ export default function App() {
     }
   };
 
+  const handlePullTodayFresh = async () => {
+    if (isAutoSyncingRef.current) return;
+    isAutoSyncingRef.current = true;
+    setIsAutoSyncing(true);
+
+    try {
+      const vnFormatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      const todayVn = vnFormatter.format(new Date());
+
+      const currentCarrierInfo = getEffectiveCarrierInfo(selectedCarrier);
+      let carrierFilterMode: 'spx_jt' | 'all' | 'custom' = 'all';
+      let selectedCarriers: string[] = [];
+
+      if (currentCarrierInfo.id === 'spx') {
+        carrierFilterMode = 'custom';
+        selectedCarriers = ['spx'];
+      } else if (currentCarrierInfo.id === 'jt') {
+        carrierFilterMode = 'custom';
+        selectedCarriers = ['jt', 'jt_cargo'];
+      } else if (currentCarrierInfo.id === 'spx_jt') {
+        carrierFilterMode = 'spx_jt';
+        selectedCarriers = ['spx', 'jt', 'jt_cargo'];
+      } else if (currentCarrierInfo.id === 'vnpost') {
+        carrierFilterMode = 'custom';
+        selectedCarriers = ['vnpost'];
+      } else if (currentCarrierInfo.id === 'best') {
+        carrierFilterMode = 'custom';
+        selectedCarriers = ['best'];
+      }
+
+      showToast(`⏳ Đang tải toàn bộ đơn hàng Hôm Nay (${todayVn}) của ${currentCarrierInfo.short} từ YunWMS...`);
+
+      const res = await fetch('/api/yunwms/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userName: 'David',
+          userPass: '12345abc',
+          dateFor: todayVn,
+          dateTo: todayVn,
+          orderStatus: '8', // Shipper (Đã xuất kho)
+          warehouseId: '7',
+          limit: 0,
+          carrierFilterMode,
+          selectedCarriers
+        })
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Lỗi khi đồng bộ đơn từ YunWMS');
+      }
+
+      const converted = convertRawWmsToOrderItems(data.orders || [], {
+        carrierFilterMode,
+        selectedCarriers,
+        excludeToday: false,
+        warehouseId: '7'
+      });
+
+      // Clear previous stale orders and load fresh today orders
+      setOrders(converted);
+      ordersRef.current = converted;
+      await clearPersistedOrders();
+      upsertOrdersToSql(converted);
+
+      const now = new Date();
+      setLastAutoSyncTime(now);
+      setLastAutoSyncAddedCount(converted.length);
+
+      showToast(`✓ Đã làm mới thành công ${converted.length} đơn ${currentCarrierInfo.short} hôm nay (${todayVn}) theo thời gian thực!`);
+    } catch (err: any) {
+      showToast(`Lỗi khi kéo đơn hôm nay: ${err.message}`);
+    } finally {
+      setIsAutoSyncing(false);
+      isAutoSyncingRef.current = false;
+    }
+  };
+
   // --- Auto Sync Periodic Poller & Gapless Auto Scan Engine ---
   const performAutoPullAndScan = async () => {
     if (isAutoSyncingRef.current) return;
@@ -1000,33 +1084,14 @@ export default function App() {
         }
       }
 
-      // Check if there are unscanned orders belonging strictly to the target carrier and start batch execution if not already scanning
-      const unscannedOrdersForActiveCarrier = mergedList.filter(o => {
-        if (o.statusCategory !== 'not_scanned') return false;
-        if (currentCarrierInfo.id === 'all') return true;
-        const code = (o.trackingCode || '').trim().toUpperCase();
-        if (currentCarrierInfo.id === 'spx') {
-          return o.carrier === 'spx' || code.startsWith('SPX');
+      // Only trigger auto-scan for newly added orders to avoid locking the UI with thousands of old orders
+      if (addedCount > 0 && !isRunningRef.current) {
+        const newlyAddedUnscanned = latestOrders.filter(o => !existingCodes.has(o.trackingCode) && o.statusCategory === 'not_scanned');
+        if (newlyAddedUnscanned.length > 0) {
+          setTimeout(() => {
+            startBatchExecution(newlyAddedUnscanned, 'unscanned');
+          }, 200);
         }
-        if (currentCarrierInfo.id === 'jt') {
-          return o.carrier === 'jt' || o.carrier === 'jt_cargo' || code.startsWith('8') || code.startsWith('53');
-        }
-        if (currentCarrierInfo.id === 'spx_jt') {
-          return o.carrier === 'spx' || o.carrier === 'jt' || o.carrier === 'jt_cargo' || code.startsWith('SPX') || code.startsWith('8') || code.startsWith('53');
-        }
-        if (currentCarrierInfo.id === 'vnpost') {
-          return o.carrier === 'vnpost' || code.startsWith('EMS') || code.startsWith('VNPOST') || /^[A-Z]{2}\d{8,11}VN$/i.test(code);
-        }
-        if (currentCarrierInfo.id === 'best') {
-          return o.carrier === 'best' || code.startsWith('TTVN') || code.startsWith('BEST') || ((code.startsWith('61') || code.startsWith('81')) && code.length === 12);
-        }
-        return o.carrier === currentCarrierInfo.id;
-      });
-
-      if (unscannedOrdersForActiveCarrier.length > 0 && !isRunningRef.current) {
-        setTimeout(() => {
-          startBatchExecution(unscannedOrdersForActiveCarrier, 'unscanned');
-        }, 200);
       }
     } catch (err: any) {
       console.warn('Auto sync warning:', err);
@@ -1177,6 +1242,7 @@ export default function App() {
             setAutoSyncCountdown(autoSyncInterval);
             performAutoPullAndScan();
           }}
+          onPullTodayFresh={handlePullTodayFresh}
           onOpenSettings={() => setShowYunWMSModal(true)}
           selectedCarrier={selectedCarrier}
           onSelectCarrier={handleSelectCarrier}

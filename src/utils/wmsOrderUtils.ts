@@ -121,6 +121,9 @@ export interface FetchGaplessWMSOptions {
   carrierFilterMode?: 'spx_jt' | 'all' | 'custom';
   selectedCarriers?: string[];
   customPrefixes?: string[];
+  dateFor?: string;
+  dateTo?: string;
+  pullAllToday?: boolean;
   onProgress?: (page: number, newOrdersCount: number) => void;
 }
 
@@ -130,6 +133,16 @@ export async function fetchGaplessWMSOrders(
 ): Promise<{ orders: OrderItem[]; newCount: number; pagesQueried: number }> {
   const maxPages = options.maxPages || 20; // Safeguard limit (up to 2,000 orders)
   const pageSize = options.pageSize || 100;
+
+  const vnFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  const todayVn = vnFormatter.format(new Date());
+  const effectiveDateFor = options.dateFor !== undefined ? options.dateFor : todayVn;
+  const effectiveDateTo = options.dateTo !== undefined ? options.dateTo : todayVn;
 
   let userName = 'David';
   let userPass = '12345abc';
@@ -163,6 +176,7 @@ export async function fetchGaplessWMSOrders(
   const seenInBatch = new Set<string>();
   let pagesQueried = 0;
   let newOrdersCount = 0;
+  let totalWmsAvailable = 0;
 
   for (let page = 1; page <= maxPages; page++) {
     pagesQueried++;
@@ -174,7 +188,9 @@ export async function fetchGaplessWMSOrders(
         userPass,
         page,
         pageSize,
-        dateInterval: '', // Empty pulls the latest orders descending in real-time
+        dateInterval: '',
+        dateFor: effectiveDateFor,
+        dateTo: effectiveDateTo,
         orderStatus: '8', // Shipper (Đã xuất kho)
         warehouseId,
         excludeToday: false, // Quét thời gian thực không trừ ngày
@@ -193,6 +209,10 @@ export async function fetchGaplessWMSOrders(
       throw new Error(data.error || 'Không thể kéo đơn từ YunWMS');
     }
 
+    if (data.total !== undefined) {
+      totalWmsAvailable = data.total;
+    }
+
     const rawList = data.orders || [];
     if (rawList.length === 0) {
       // Reached the end of WMS list
@@ -207,7 +227,7 @@ export async function fetchGaplessWMSOrders(
       warehouseId
     });
 
-    let foundExistingInThisPage = false;
+    let newInThisPage = 0;
 
     for (const item of converted) {
       if (!seenInBatch.has(item.trackingCode)) {
@@ -215,28 +235,33 @@ export async function fetchGaplessWMSOrders(
         allFetchedOrders.push(item);
       }
 
-      if (existingCodes.has(item.trackingCode)) {
-        foundExistingInThisPage = true;
-      } else {
+      if (!existingCodes.has(item.trackingCode)) {
         newOrdersCount++;
+        newInThisPage++;
       }
     }
 
     options.onProgress?.(page, newOrdersCount);
 
-    // If we have an existing database of orders, and we found an order that already exists in this page,
-    // it means we have completely bridged the gap between now and the previous sync!
-    if (existingCodes.size > 0 && foundExistingInThisPage) {
+    // If pulling all orders of today, continue until all raw items of today are fetched
+    if (options.pullAllToday || existingCodes.size === 0) {
+      if (data.rawCount !== undefined && data.rawCount < pageSize) {
+        break;
+      }
+      if (totalWmsAvailable > 0 && page * pageSize >= totalWmsAvailable) {
+        break;
+      }
+      continue;
+    }
+
+    // When doing periodic polling (existingCodes.size > 0):
+    // If an entire page had raw items but yielded 0 new items AND we've queried at least 2 pages, we're fully caught up
+    if (newInThisPage === 0 && page >= 2) {
       break;
     }
 
     // If rawCount from WMS is less than pageSize, there are no more pages
     if (data.rawCount !== undefined && data.rawCount < pageSize) {
-      break;
-    }
-
-    // If existingCodes is empty (brand new empty list), only fetch 1 page to avoid pulling thousands of old orders automatically
-    if (existingCodes.size === 0) {
       break;
     }
   }

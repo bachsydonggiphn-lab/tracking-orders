@@ -21,6 +21,7 @@ export interface AutoSyncBarProps {
   lastSyncTime: Date | null;
   lastAddedCount: number;
   onTriggerNow: () => void;
+  onPullTodayFresh?: () => void;
   onOpenSettings?: () => void;
   // Hợp nhất đơn vị vận chuyển
   selectedCarrier: string; // 'all' | 'spx' | 'jt' | 'jt_cargo' | 'spx_jt' | 'vnpost' | 'best' ...
@@ -157,6 +158,7 @@ export const AutoSyncBar: React.FC<AutoSyncBarProps> = ({
   lastSyncTime,
   lastAddedCount,
   onTriggerNow,
+  onPullTodayFresh,
   onOpenSettings,
   selectedCarrier,
   onSelectCarrier
@@ -346,6 +348,20 @@ export const AutoSyncBar: React.FC<AutoSyncBarProps> = ({
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
               <span>Kéo & Quét Ngay</span>
             </button>
+
+            {/* Pull Today Fresh Button */}
+            {onPullTodayFresh && (
+              <button
+                type="button"
+                onClick={onPullTodayFresh}
+                disabled={isSyncing}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs border bg-amber-500 hover:bg-amber-400 text-slate-950 border-amber-400 active:scale-95 disabled:opacity-50"
+                title="Tải mới toàn bộ đơn hàng hôm nay từ YunWMS theo thời gian thực (xóa các đơn cũ còn tồn đọng)"
+              >
+                <Zap className="w-3.5 h-3.5 text-slate-950" />
+                <span>⚡ Lấy toàn bộ đơn Hôm Nay</span>
+              </button>
+            )}
 
             {/* Settings Button */}
             {onOpenSettings && (

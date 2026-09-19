@@ -62,15 +62,16 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
   const [limit, setLimit] = useState<number>(0); // Default to 0 = Toàn bộ đơn không giới hạn
   const [warehouseId, setWarehouseId] = useState<string>('7'); // Default to 7: VN02 [越南胡志明仓库]
   const [dateInterval, setDateInterval] = useState<string>(''); // Default to exact date selection
+  const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
   const [isCustomDate, setIsCustomDate] = useState<boolean>(true); // Default to true so dateFor and dateTo are active
-  const [customDateFor, setCustomDateFor] = useState<string>('2026-09-17'); // Default to 2026-09-17 for instant sync match
-  const [customDateTo, setCustomDateTo] = useState<string>('2026-09-17');
+  const [customDateFor, setCustomDateFor] = useState<string>(todayStr); // Default to today in real-time
+  const [customDateTo, setCustomDateTo] = useState<string>(todayStr);
   const [searchDateType, setSearchDateType] = useState<string>('createDate'); // createDate, printTime, packTime, shipTime, syncWmsTime
   const [customerCode, setCustomerCode] = useState<string>(''); // YD or all
   const [orderStatus, setOrderStatus] = useState<string>('8'); // Mặc định Mã 8 (Shipped / Đã xuất kho) khớp 100% số lượng 1.453 đơn WMS
   const [threads, setThreads] = useState<number>(20); // Multi-threading concurrency (default 20 workers)
   const [autoTrack, setAutoTrack] = useState<boolean>(true);
-  const [appendMode, setAppendMode] = useState<boolean>(true);
+  const [appendMode, setAppendMode] = useState<boolean>(false); // Mặc định false để tải đơn mới nhất thay vì gộp đè đơn cũ
 
   // Carrier filter: Mặc định 'all' (Toàn bộ đơn kho 100%) để không bỏ sót bất kỳ đơn nào khớp WMS
   const [only8623AndSpxvn, setOnly8623AndSpxvn] = useState<boolean>(false);
@@ -80,7 +81,6 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
   const [customPrefixes, setCustomPrefixes] = useState<string[]>([]);
   const [customPrefixInput, setCustomPrefixInput] = useState<string>('');
   const [showPrefixDictionary, setShowPrefixDictionary] = useState<boolean>(false);
-  const todayStr = new Date().toISOString().split('T')[0];
 
   const handleToggleRealtime = (enableRealtime: boolean) => {
     setExcludeToday(!enableRealtime);
@@ -1130,50 +1130,51 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    setCustomDateFor(todayStr);
+                    setCustomDateTo(todayStr);
+                    setIsCustomDate(true);
+                  }}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer border ${
+                    isCustomDate && customDateFor === todayStr && customDateTo === todayStr
+                      ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-400/50'
+                      : 'bg-white text-emerald-800 border-emerald-300 hover:bg-emerald-50'
+                  }`}
+                >
+                  ⚡ Hôm nay ({todayStr.slice(8)}) (Thời gian thực)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const yest = new Date(Date.now() - 86400000);
+                    const yestStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(yest);
+                    setCustomDateFor(yestStr);
+                    setCustomDateTo(yestStr);
+                    setIsCustomDate(true);
+                  }}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                    isCustomDate && customDateFor !== todayStr && customDateFor !== '2026-09-17'
+                      ? 'bg-amber-600 text-white border-amber-700 shadow-xs ring-2 ring-amber-400/50'
+                      : 'bg-white text-slate-800 border-slate-300 hover:bg-slate-100'
+                  }`}
+                >
+                  📅 Hôm qua
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
                     setCustomDateFor('2026-09-17');
                     setCustomDateTo('2026-09-17');
                     setIsCustomDate(true);
                   }}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer border ${
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
                     isCustomDate && customDateFor === '2026-09-17' && customDateTo === '2026-09-17'
-                      ? 'bg-amber-600 text-white border-amber-700 shadow-xs ring-2 ring-amber-400/50'
-                      : 'bg-white text-slate-800 border-amber-300 hover:bg-amber-100/60'
-                  }`}
-                >
-                  🎯 Ngày 17 (Khớp 1.453 đơn WMS)
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
-                    setCustomDateFor(today);
-                    setCustomDateTo(today);
-                    setIsCustomDate(true);
-                  }}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
-                    isCustomDate && customDateFor === new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date()) && customDateTo === customDateFor
-                      ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-400/50'
-                      : 'bg-white text-slate-800 border-slate-300 hover:bg-slate-100'
-                  }`}
-                >
-                  ⚡ Hôm nay (18)
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCustomDateFor('2026-09-16');
-                    setCustomDateTo('2026-09-16');
-                    setIsCustomDate(true);
-                  }}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
-                    isCustomDate && customDateFor === '2026-09-16' && customDateTo === '2026-09-16'
                       ? 'bg-amber-600 text-white border-amber-700 shadow-xs ring-2 ring-amber-400/50'
                       : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
                   }`}
                 >
-                  📅 Ngày 16
+                  📅 Ngày 17
                 </button>
               </div>
             </div>
