@@ -80,6 +80,7 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
   const [customPrefixes, setCustomPrefixes] = useState<string[]>([]);
   const [customPrefixInput, setCustomPrefixInput] = useState<string>('');
   const [showPrefixDictionary, setShowPrefixDictionary] = useState<boolean>(false);
+  const todayStr = new Date().toISOString().split('T')[0];
 
   const handleToggleRealtime = (enableRealtime: boolean) => {
     setExcludeToday(!enableRealtime);

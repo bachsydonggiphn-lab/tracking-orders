@@ -33,6 +33,7 @@ interface OrderTableProps {
   onOpenBest20Modal?: (codes?: string[]) => void;
   isProcessing?: boolean;
   defaultJtPhone?: string;
+  onBatchConfirmScanned?: (orders: OrderItem[]) => void;
 }
 
 export const OrderTable: React.FC<OrderTableProps> = ({
@@ -44,7 +45,8 @@ export const OrderTable: React.FC<OrderTableProps> = ({
   onOpenJNT10Modal,
   onOpenBest20Modal,
   isProcessing,
-  defaultJtPhone = '8836'
+  defaultJtPhone = '8836',
+  onBatchConfirmScanned
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
@@ -474,6 +476,22 @@ export const OrderTable: React.FC<OrderTableProps> = ({
               >
                 <ExternalLink className="w-3.5 h-3.5 mr-1" />
                 Mở 10 đơn trên web J&T ({Math.min(10, selectedJtOrders.length)})
+              </button>
+            )}
+
+            {onBatchConfirmScanned && (
+              <button
+                type="button"
+                onClick={() => {
+                  const targetOrders = orders.filter(o => selectedIds.has(o.id));
+                  onBatchConfirmScanned(targetOrders);
+                }}
+                disabled={isProcessing}
+                className="inline-flex items-center px-3 py-1.5 rounded-lg font-bold text-xs bg-emerald-600 hover:bg-emerald-500 text-white transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
+                title="Đánh dấu các đơn đã chọn sang ĐÃ SCAN (Bưu tá đã nhận kiện)"
+              >
+                <Check className="w-3.5 h-3.5 mr-1" />
+                ✓ Xác nhận {selectedIds.size} đơn: ĐÃ SCAN
               </button>
             )}
 

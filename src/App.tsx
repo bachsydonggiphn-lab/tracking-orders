@@ -18,6 +18,7 @@ import { AutoSyncBar, getEffectiveCarrierInfo } from './components/AutoSyncBar';
 import { BatchStats, CarrierId, OrderItem, TrackingProgressMetrics, TrackingStatusCategory } from './types/tracking';
 import { createOrderItem, trackSingleOrder, trackBatchOrders, clearTrackingCache } from './services/trackingService';
 import { detectCarrier, getDirectTrackingUrl } from './services/carrierDetector';
+import { getStatusLabel } from './services/exportService';
 import { isOrderWithinDays, getOrderAgeInfo } from './utils/dateFilter';
 import { getInitialOrdersSync, loadIndexedDBOrders, loadPersistedOrders, saveOrdersDebounced, saveOrdersToStorage, clearPersistedOrders, normalizeOrderList, upsertOrdersToSql } from './utils/orderStorage';
 import { fetchGaplessWMSOrders, fetchLatestWMSOrders } from './utils/wmsOrderUtils';
@@ -769,6 +770,41 @@ export default function App() {
     }
   };
 
+  const handleBatchConfirmScanned = (targetOrders: OrderItem[]) => {
+    if (!targetOrders || targetOrders.length === 0) return;
+    const now = new Date();
+    const nowStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+    const targetCodes = new Set(targetOrders.map(o => o.trackingCode));
+
+    const updatedList = ordersRef.current.map(order => {
+      if (!targetCodes.has(order.trackingCode)) return order;
+      const carrierName = order.carrier === 'jt' ? 'J&T Express' : order.carrier === 'best' ? 'Best Express' : order.carrier === 'ghn' ? 'GHN' : order.carrier.toUpperCase();
+      const confirmedTimeline = [
+        {
+          time: nowStr,
+          statusText: `Đã lấy hàng - Bưu tá ${carrierName} đã nhận kiện`,
+          location: 'Bưu cục phát / Điểm gom hàng'
+        },
+        ...(order.timeline || [])
+      ];
+      return {
+        ...order,
+        statusCategory: 'scanned' as TrackingStatusCategory,
+        rawStatusText: `Đã lấy hàng - Bưu tá ${carrierName} đã nhận kiện`,
+        statusDetail: `Bưu tá đã quét nhận và kiện đang luân chuyển trên mạng lưới ${carrierName}`,
+        scannedAt: order.scannedAt || nowStr,
+        timeline: confirmedTimeline,
+        updatedAt: nowStr
+      };
+    });
+
+    ordersRef.current = updatedList;
+    setOrders([...updatedList]);
+    const modified = updatedList.filter(o => targetCodes.has(o.trackingCode));
+    upsertOrdersToSql(modified);
+    showToast(`✓ Đã xác nhận thành công ${targetOrders.length} đơn sang ĐÃ SCAN!`);
+  };
+
   const handleSelectOrder = (order: OrderItem) => {
     setSelectedOrder(order);
     // Only auto-refresh in background if the order was not yet scanned or had an error.
@@ -1200,6 +1236,7 @@ export default function App() {
             }}
             isProcessing={isProcessing}
             defaultJtPhone={jtPhoneSuffix}
+            onBatchConfirmScanned={handleBatchConfirmScanned}
           />
         )}
 
