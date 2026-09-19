@@ -10,6 +10,17 @@ const STATE_JSON_PATH = path.join(DATA_DIR, "orders_state.json");
 let clientInstance: Client | null = null;
 let isInitialized = false;
 
+export function switchToLocalDb(): Client {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+  console.log(`[Database] Đang chuyển sang SQLite Local: ${DB_PATH}`);
+  clientInstance = createClient({
+    url: `file:${DB_PATH}`
+  });
+  return clientInstance;
+}
+
 export function getSqliteDb(): Client {
   if (!clientInstance) {
     const tursoUrl = (process.env.TURSO_DATABASE_URL || "").trim();
@@ -22,13 +33,7 @@ export function getSqliteDb(): Client {
         authToken: tursoToken || undefined
       });
     } else {
-      if (!fs.existsSync(DATA_DIR)) {
-        fs.mkdirSync(DATA_DIR, { recursive: true });
-      }
-      console.log(`[Database] Đang chạy với SQLite Local file: ${DB_PATH}`);
-      clientInstance = createClient({
-        url: `file:${DB_PATH}`
-      });
+      switchToLocalDb();
     }
   }
 

@@ -386,32 +386,91 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
             </div>
           )}
 
+          {/* Quick Manual Scan Confirmation & Status Override */}
+          {effectiveStatus.statusCategory === 'not_scanned' && onUpdateOrder && (
+            <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+              <div>
+                <div className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Xác nhận hàng đã bàn giao cho bưu tá?</span>
+                </div>
+                <div className="text-[11px] text-emerald-700">
+                  Nếu bạn đã kiểm tra trên App bưu tá thấy kiện đã quét lấy/trung chuyển, bấm nút này để chốt trạng thái <strong>ĐÃ SCAN</strong> ngay.
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  const nowStr = new Intl.DateTimeFormat('en-GB', {
+                    timeZone: 'Asia/Ho_Chi_Minh',
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                  }).format(new Date());
+                  onUpdateOrder({
+                    ...order,
+                    statusCategory: 'scanned',
+                    rawStatusText: 'Đã lấy hàng - Bưu tá J&T đã nhận kiện',
+                    statusDetail: 'Bưu tá đã lấy hàng và kiện đang luân chuyển trên mạng lưới J&T Express',
+                    scannedAt: order.scannedAt || nowStr
+                  });
+                  onToast(`Đã chuyển đơn ${order.trackingCode} sang ĐÃ SCAN!`);
+                }}
+                className="w-full sm:w-auto px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>✓ Xác nhận: ĐÃ SCAN LẤY</span>
+              </button>
+            </div>
+          )}
+
           {/* J&T Specific Phone Suffix Controller */}
           {order.carrier === 'jt' && (
-            <div className="p-3 bg-rose-50/70 rounded-xl border border-rose-200/80 space-y-2">
+            <div className="p-3 bg-rose-50/70 rounded-xl border border-rose-200/80 space-y-2.5">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-bold text-rose-800 uppercase tracking-wider font-mono">
                   Mở khóa dữ liệu J&T Express (4 số cuối SĐT):
                 </span>
                 <span className="text-[10px] bg-rose-200/70 text-rose-800 font-bold px-1.5 py-0.5 rounded font-mono">
-                  Tự động 8836
+                  Cần SĐT người nhận
                 </span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="px-2.5 py-1 text-xs font-mono font-bold rounded-lg bg-rose-600 text-white shadow-2xs">
-                  8836 (Tự động)
-                </span>
+              <div className="flex items-center flex-wrap gap-2">
+                <input
+                  type="text"
+                  maxLength={4}
+                  value={phoneSuffix}
+                  onChange={(e) => setPhoneSuffix(e.target.value.replace(/\D/g, ''))}
+                  placeholder="4 số cuối..."
+                  className="w-24 px-2.5 py-1.5 text-xs font-mono font-bold rounded-lg border border-rose-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500 shadow-2xs text-center"
+                />
                 <button
-                  onClick={() => handleLiveRefresh('8836')}
-                  disabled={isRefreshing}
+                  type="button"
+                  onClick={() => setPhoneSuffix('8836')}
+                  className={`px-2 py-1 text-[11px] font-mono font-bold rounded-md border transition-colors cursor-pointer ${phoneSuffix === '8836' ? 'bg-rose-600 text-white border-rose-700' : 'bg-white text-rose-700 border-rose-200 hover:bg-rose-100'}`}
+                >
+                  8836 (Kho)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPhoneSuffix('8036')}
+                  className={`px-2 py-1 text-[11px] font-mono font-bold rounded-md border transition-colors cursor-pointer ${phoneSuffix === '8036' ? 'bg-rose-600 text-white border-rose-700' : 'bg-white text-rose-700 border-rose-200 hover:bg-rose-100'}`}
+                >
+                  8036
+                </button>
+                <button
+                  onClick={() => handleLiveRefresh(phoneSuffix)}
+                  disabled={isRefreshing || !phoneSuffix}
                   className="inline-flex items-center px-3 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 rounded-lg transition-colors cursor-pointer shadow-2xs ml-auto"
                 >
                   <RefreshCw className={`w-3 h-3 mr-1.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-                  Quét lại trực tiếp (8836)
+                  Quét lại ({phoneSuffix || '8836'})
                 </button>
               </div>
               <p className="text-[11px] text-rose-700 leading-tight">
-                Hệ thống tự động sử dụng đuôi SĐT <strong>8836</strong> để mở khóa dữ liệu lộ trình trên cổng J&T Express.
+                💡 Cổng web công khai của J&T bảo mật thông tin trung chuyển: Cần nhập đúng <strong>4 số cuối SĐT Người Nhận</strong> để mở khóa các mốc xe trung chuyển (như Xóm Chiếu, Long Hậu).
               </p>
             </div>
           )}
