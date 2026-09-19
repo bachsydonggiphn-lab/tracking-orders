@@ -859,13 +859,14 @@ export default function App() {
       }
     }
 
-    if (appendMode || currentList.length > 0) {
+    if (appendMode) {
       finalOrders = Array.from(existingMap.values());
       const newCount = finalOrders.length - currentList.length;
       showToast(`Đã đồng bộ ${syncedOrders.length.toLocaleString()} đơn từ YunWMS (Thêm ${newCount > 0 ? newCount.toLocaleString() : 0} mới, cập nhật ${syncedOrders.length.toLocaleString()} đơn). Tổng: ${finalOrders.length.toLocaleString()} đơn.`);
     } else {
       finalOrders = syncedOrders;
-      showToast(`Đã đồng bộ ${finalOrders.length.toLocaleString()} đơn từ YunWMS vào hệ thống.`);
+      showToast(`Đã đồng bộ mới ${finalOrders.length.toLocaleString()} đơn từ YunWMS vào hệ thống.`);
+      clearPersistedOrders();
     }
 
     setOrders(finalOrders);
@@ -926,6 +927,7 @@ export default function App() {
           userPass: '12345abc',
           dateFor: todayVn,
           dateTo: todayVn,
+          searchDateType: localStorage.getItem('yunwms_search_date_type') || 'shipTime',
           orderStatus: '8', // Shipper (Đã xuất kho)
           warehouseId: '7',
           limit: 0,
@@ -1011,9 +1013,16 @@ export default function App() {
       // It automatically paginates until it touches an order already in our system,
       // guaranteeing that even if the app was closed or paused for 29 minutes,
       // NO NEW ORDERS OF THIS CARRIER ARE MISSED!
+      const searchDateType = localStorage.getItem('yunwms_search_date_type') || 'shipTime';
+      const savedDateFor = localStorage.getItem('yunwms_date_for');
+      const savedDateTo = localStorage.getItem('yunwms_date_to');
+
       const { orders: latestOrders, pagesQueried } = await fetchGaplessWMSOrders(existingCodes, {
         maxPages: 25,
         pageSize: 100,
+        searchDateType,
+        dateFor: savedDateFor || undefined,
+        dateTo: savedDateTo || undefined,
         carrierFilterMode: wmsCarrierFilterMode,
         selectedCarriers: wmsSelectedCarriers
       });

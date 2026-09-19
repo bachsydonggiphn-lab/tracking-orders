@@ -123,6 +123,7 @@ export interface FetchGaplessWMSOptions {
   customPrefixes?: string[];
   dateFor?: string;
   dateTo?: string;
+  searchDateType?: string;
   pullAllToday?: boolean;
   onProgress?: (page: number, newOrdersCount: number) => void;
 }
@@ -150,6 +151,7 @@ export async function fetchGaplessWMSOrders(
   let carrierFilterMode: 'spx_jt' | 'all' | 'custom' = 'spx_jt';
   let selectedCarriers: string[] = ['spx', 'jt', 'jt_cargo', 'vnpost', 'best'];
   let customPrefixes: string[] = [];
+  let searchDateType = 'shipTime';
 
   try {
     const u = localStorage.getItem('yunwms_username');
@@ -158,6 +160,7 @@ export async function fetchGaplessWMSOrders(
     const m = localStorage.getItem('yunwms_carrier_filter_mode') as any;
     const sc = localStorage.getItem('yunwms_selected_carriers');
     const cp = localStorage.getItem('yunwms_custom_prefixes');
+    const sdt = localStorage.getItem('yunwms_search_date_type');
 
     if (u) userName = u;
     if (p) userPass = p;
@@ -165,104 +168,144 @@ export async function fetchGaplessWMSOrders(
     if (m) carrierFilterMode = m;
     if (sc) selectedCarriers = JSON.parse(sc);
     if (cp) customPrefixes = JSON.parse(cp);
+    if (sdt) searchDateType = sdt;
   } catch {}
 
   // Override with caller options if explicitly provided (e.g. follow user active carrier filter)
   if (options.carrierFilterMode) carrierFilterMode = options.carrierFilterMode;
   if (options.selectedCarriers && options.selectedCarriers.length > 0) selectedCarriers = options.selectedCarriers;
   if (options.customPrefixes && options.customPrefixes.length > 0) customPrefixes = options.customPrefixes;
+  if (options.searchDateType) searchDateType = options.searchDateType;
 
   const allFetchedOrders: OrderItem[] = [];
   const seenInBatch = new Set<string>();
-  let pagesQueried = 0;
+  let pagesQueried = 1;
   let newOrdersCount = 0;
-  let totalWmsAvailable = 0;
 
-  for (let page = 1; page <= maxPages; page++) {
-    pagesQueried++;
-    const response = await fetch('/api/yunwms/orders', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userName,
-        userPass,
-        page,
-        pageSize,
-        dateInterval: '',
-        dateFor: effectiveDateFor,
-        dateTo: effectiveDateTo,
-        orderStatus: '8', // Shipper (Đã xuất kho)
-        warehouseId,
-        excludeToday: false, // Quét thời gian thực không trừ ngày
-        carrierFilterMode,
-        selectedCarriers,
-        customPrefixes
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error ${response.status}`);
-    }
-
-    const data = await response.json();
-    if (!data.success) {
-      throw new Error(data.error || 'Không thể kéo đơn từ YunWMS');
-    }
-
-    if (data.total !== undefined) {
-      totalWmsAvailable = data.total;
-    }
-
-    const rawList = data.orders || [];
-    if (rawList.length === 0) {
-      // Reached the end of WMS list
-      break;
-    }
-
-    const converted = convertRawWmsToOrderItems(rawList, {
+  // Step 1: Probe Page 1 to inspect total count and get first 100 items
+  const probeResponse = await fetch('/api/yunwms/orders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      userName,
+      userPass,
+      page: 1,
+      pageSize,
+      dateInterval: '',
+      dateFor: effectiveDateFor,
+      dateTo: effectiveDateTo,
+      searchDateType,
+      orderStatus: '8', // Shipper (Đã xuất kho)
+      warehouseId,
+      excludeToday: false, // Quét thời gian thực không trừ ngày
       carrierFilterMode,
       selectedCarriers,
-      customPrefixes,
-      excludeToday: false,
-      warehouseId
-    });
+      customPrefixes
+    })
+  });
 
-    let newInThisPage = 0;
+  if (!probeResponse.ok) {
+    throw new Error(`HTTP error ${probeResponse.status}`);
+  }
 
-    for (const item of converted) {
-      if (!seenInBatch.has(item.trackingCode)) {
-        seenInBatch.add(item.trackingCode);
-        allFetchedOrders.push(item);
-      }
+  const probeData = await probeResponse.json();
+  if (!probeData.success) {
+    throw new Error(probeData.error || 'Không thể kéo đơn từ YunWMS');
+  }
 
-      if (!existingCodes.has(item.trackingCode)) {
-        newOrdersCount++;
-        newInThisPage++;
-      }
+  const rawList1 = probeData.orders || [];
+  const totalWmsAvailable = probeData.total || rawList1.length;
+
+  const converted1 = convertRawWmsToOrderItems(rawList1, {
+    carrierFilterMode,
+    selectedCarriers,
+    customPrefixes,
+    excludeToday: false,
+    warehouseId
+  });
+
+  for (const item of converted1) {
+    if (!seenInBatch.has(item.trackingCode)) {
+      seenInBatch.add(item.trackingCode);
+      allFetchedOrders.push(item);
+    }
+    if (!existingCodes.has(item.trackingCode)) {
+      newOrdersCount++;
+    }
+  }
+
+  options.onProgress?.(1, newOrdersCount);
+
+  // Step 2: Compute remaining pages to query
+  const totalPages = totalWmsAvailable > 0 ? Math.ceil(totalWmsAvailable / pageSize) : 1;
+  const targetMaxPages = Math.min(maxPages, totalPages);
+
+  // If there are more pages, fetch them in parallel chunks of 5 pages
+  if (targetMaxPages > 1) {
+    const remainingPages: number[] = [];
+    for (let p = 2; p <= targetMaxPages; p++) {
+      remainingPages.push(p);
     }
 
-    options.onProgress?.(page, newOrdersCount);
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < remainingPages.length; i += BATCH_SIZE) {
+      const batch = remainingPages.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map(async (p) => {
+          pagesQueried++;
+          try {
+            const res = await fetch('/api/yunwms/orders', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userName,
+                userPass,
+                page: p,
+                pageSize,
+                dateInterval: '',
+                dateFor: effectiveDateFor,
+                dateTo: effectiveDateTo,
+                searchDateType,
+                orderStatus: '8',
+                warehouseId,
+                excludeToday: false,
+                carrierFilterMode,
+                selectedCarriers,
+                customPrefixes
+              })
+            });
+            if (!res.ok) return [];
+            const d = await res.json();
+            return d.orders || [];
+          } catch (e) {
+            console.warn(`Lỗi khi tải trang ${p}:`, e);
+            return [];
+          }
+        })
+      );
 
-    // If pulling all orders of today, continue until all raw items of today are fetched
-    if (options.pullAllToday || existingCodes.size === 0) {
-      if (data.rawCount !== undefined && data.rawCount < pageSize) {
-        break;
+      for (const pageOrders of batchResults) {
+        if (!pageOrders || pageOrders.length === 0) continue;
+        const converted = convertRawWmsToOrderItems(pageOrders, {
+          carrierFilterMode,
+          selectedCarriers,
+          customPrefixes,
+          excludeToday: false,
+          warehouseId
+        });
+
+        for (const item of converted) {
+          if (!seenInBatch.has(item.trackingCode)) {
+            seenInBatch.add(item.trackingCode);
+            allFetchedOrders.push(item);
+          }
+          if (!existingCodes.has(item.trackingCode)) {
+            newOrdersCount++;
+          }
+        }
       }
-      if (totalWmsAvailable > 0 && page * pageSize >= totalWmsAvailable) {
-        break;
-      }
-      continue;
-    }
 
-    // When doing periodic polling (existingCodes.size > 0):
-    // If an entire page had raw items but yielded 0 new items AND we've queried at least 2 pages, we're fully caught up
-    if (newInThisPage === 0 && page >= 2) {
-      break;
-    }
-
-    // If rawCount from WMS is less than pageSize, there are no more pages
-    if (data.rawCount !== undefined && data.rawCount < pageSize) {
-      break;
+      options.onProgress?.(Math.min(targetMaxPages, i + BATCH_SIZE + 1), newOrdersCount);
     }
   }
 

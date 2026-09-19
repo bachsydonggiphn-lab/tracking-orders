@@ -64,23 +64,82 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
   const [dateInterval, setDateInterval] = useState<string>(''); // Default to exact date selection
   const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
   const [isCustomDate, setIsCustomDate] = useState<boolean>(true); // Default to true so dateFor and dateTo are active
-  const [customDateFor, setCustomDateFor] = useState<string>(todayStr); // Default to today in real-time
-  const [customDateTo, setCustomDateTo] = useState<string>(todayStr);
-  const [searchDateType, setSearchDateType] = useState<string>('createDate'); // createDate, printTime, packTime, shipTime, syncWmsTime
+  const [customDateFor, setCustomDateFor] = useState<string>(() => {
+    try {
+      return localStorage.getItem('yunwms_date_for') || todayStr;
+    } catch {
+      return todayStr;
+    }
+  });
+  const [customDateTo, setCustomDateTo] = useState<string>(() => {
+    try {
+      return localStorage.getItem('yunwms_date_to') || todayStr;
+    } catch {
+      return todayStr;
+    }
+  });
+  const [searchDateType, setSearchDateType] = useState<string>(() => {
+    try {
+      return localStorage.getItem('yunwms_search_date_type') || 'shipTime';
+    } catch {
+      return 'shipTime';
+    }
+  }); // Default to shipTime (100% khớp đơn xuất kho hôm nay)
   const [customerCode, setCustomerCode] = useState<string>(''); // YD or all
-  const [orderStatus, setOrderStatus] = useState<string>('8'); // Mặc định Mã 8 (Shipped / Đã xuất kho) khớp 100% số lượng 1.453 đơn WMS
+  const [orderStatus, setOrderStatus] = useState<string>('8'); // Mặc định Mã 8 (Shipped / Đã xuất kho)
   const [threads, setThreads] = useState<number>(20); // Multi-threading concurrency (default 20 workers)
   const [autoTrack, setAutoTrack] = useState<boolean>(true);
-  const [appendMode, setAppendMode] = useState<boolean>(false); // Mặc định false để tải đơn mới nhất thay vì gộp đè đơn cũ
+  const [appendMode, setAppendMode] = useState<boolean>(false); // Mặc định false để tải mới đơn hôm nay
 
   // Carrier filter: Mặc định 'all' (Toàn bộ đơn kho 100%) để không bỏ sót bất kỳ đơn nào khớp WMS
   const [only8623AndSpxvn, setOnly8623AndSpxvn] = useState<boolean>(false);
   const [excludeToday, setExcludeToday] = useState<boolean>(false); // ⚡ Mặc định Thời Gian Thực: Không trừ 1 ngày!
-  const [carrierFilterMode, setCarrierFilterMode] = useState<'spx_jt' | 'all' | 'custom'>('all');
-  const [selectedCarriers, setSelectedCarriers] = useState<string[]>(['spx', 'jt', 'vnpost', 'best']);
+  const [carrierFilterMode, setCarrierFilterMode] = useState<'spx_jt' | 'all' | 'custom'>(() => {
+    try {
+      return (localStorage.getItem('yunwms_carrier_filter_mode') as any) || 'all';
+    } catch {
+      return 'all';
+    }
+  });
+  const [selectedCarriers, setSelectedCarriers] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('yunwms_selected_carriers');
+      return saved ? JSON.parse(saved) : ['spx', 'jt', 'vnpost', 'best'];
+    } catch {
+      return ['spx', 'jt', 'vnpost', 'best'];
+    }
+  });
   const [customPrefixes, setCustomPrefixes] = useState<string[]>([]);
   const [customPrefixInput, setCustomPrefixInput] = useState<string>('');
   const [showPrefixDictionary, setShowPrefixDictionary] = useState<boolean>(false);
+
+  const handleUpdateSearchDateType = (type: string) => {
+    setSearchDateType(type);
+    try {
+      localStorage.setItem('yunwms_search_date_type', type);
+    } catch {}
+  };
+
+  const handleUpdateDateFor = (val: string) => {
+    setCustomDateFor(val);
+    try {
+      localStorage.setItem('yunwms_date_for', val);
+    } catch {}
+  };
+
+  const handleUpdateDateTo = (val: string) => {
+    setCustomDateTo(val);
+    try {
+      localStorage.setItem('yunwms_date_to', val);
+    } catch {}
+  };
+
+  const handleUpdateCarrierFilterMode = (mode: 'spx_jt' | 'all' | 'custom') => {
+    setCarrierFilterMode(mode);
+    try {
+      localStorage.setItem('yunwms_carrier_filter_mode', mode);
+    } catch {}
+  };
 
   const handleToggleRealtime = (enableRealtime: boolean) => {
     setExcludeToday(!enableRealtime);
@@ -358,6 +417,16 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
     const isUnlimited = limit <= 0;
     let targetTotal = isUnlimited ? 0 : limit;
     setTargetCount(targetTotal);
+
+    try {
+      localStorage.setItem('yunwms_search_date_type', searchDateType);
+      localStorage.setItem('yunwms_date_for', isCustomDate ? customDateFor : '');
+      localStorage.setItem('yunwms_date_to', isCustomDate ? effectiveCustomDateTo : '');
+      localStorage.setItem('yunwms_carrier_filter_mode', carrierFilterMode);
+      localStorage.setItem('yunwms_selected_carriers', JSON.stringify(selectedCarriers));
+      localStorage.setItem('yunwms_warehouse_id', warehouseId);
+      localStorage.setItem('yunwms_order_status', orderStatus);
+    } catch {}
 
     try {
       abortControllerRef.current = new AbortController();
@@ -1069,7 +1138,7 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
                   name="searchDateType"
                   id="searchDateType"
                   value={searchDateType}
-                  onChange={(e) => setSearchDateType(e.target.value)}
+                  onChange={(e) => handleUpdateSearchDateType(e.target.value)}
                   className="px-2.5 py-1 bg-white border border-amber-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs cursor-pointer"
                 >
                   <option value="createDate">Order creation time</option>
@@ -1096,10 +1165,10 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
                   value={customDateFor}
                   onChange={(e) => {
                     const val = e.target.value;
-                    setCustomDateFor(val);
+                    handleUpdateDateFor(val);
                     setIsCustomDate(true);
                     if (!customDateTo || customDateTo < val) {
-                      setCustomDateTo(val);
+                      handleUpdateDateTo(val);
                     }
                   }}
                   className="datepicker input_text keyToSearch hasDatepicker px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs"
@@ -1117,7 +1186,7 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
                   id="dateTo"
                   value={customDateTo}
                   onChange={(e) => {
-                    setCustomDateTo(e.target.value);
+                    handleUpdateDateTo(e.target.value);
                     setIsCustomDate(true);
                   }}
                   className="datepickerTo input_text keyToSearch hasDatepicker px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs"
@@ -1130,8 +1199,9 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    setCustomDateFor(todayStr);
-                    setCustomDateTo(todayStr);
+                    handleUpdateDateFor(todayStr);
+                    handleUpdateDateTo(todayStr);
+                    handleUpdateSearchDateType('shipTime');
                     setIsCustomDate(true);
                   }}
                   className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer border ${
@@ -1148,8 +1218,8 @@ export const YunWMSSyncModal: React.FC<YunWMSSyncModalProps> = ({
                   onClick={() => {
                     const yest = new Date(Date.now() - 86400000);
                     const yestStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(yest);
-                    setCustomDateFor(yestStr);
-                    setCustomDateTo(yestStr);
+                    handleUpdateDateFor(yestStr);
+                    handleUpdateDateTo(yestStr);
                     setIsCustomDate(true);
                   }}
                   className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
